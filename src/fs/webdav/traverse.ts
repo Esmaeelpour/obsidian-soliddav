@@ -3,6 +3,7 @@ import apiLimiter from '~/composable/api-limiter';
 import { normalizePathToRelative } from '~/platform/path';
 import { useSettings } from '~/settings';
 import { decryptRemotePathForTraversal } from '~/utils/encryption';
+import { buildRules, needIncludeFromGlobRules } from '~/utils/glob-match';
 import isRetryableError from '~/utils/is-retryable-error';
 import logger from '~/utils/logger';
 import sleep from '~/utils/sleep';
@@ -68,6 +69,13 @@ export default async function traverse({
 			totalDirectories: result.size,
 		});
 	} else {
+		// Don't descend into excluded folders (e.g. .obsidian) while walking — it
+		// saves many PROPFIND round-trips (a big deal on mobile latency). Only safe
+		// to prune when there are no inclusion rules that could match inside them.
+		const exclusions = buildRules(filterRules.exclusionRules);
+		const inclusions = buildRules(filterRules.inclusionRules);
+		const pruneExcludedDirs = (filterRules.inclusionRules?.length ?? 0) === 0;
+
 		let processedCount = 0;
 		const queue = [remoteDir];
 		const reportProgress = (current: string) => {
@@ -101,7 +109,15 @@ export default async function traverse({
 								item.statModel.path,
 							);
 							result.set(vaultPath, item.statModel);
-							if (item.statModel.isDir) queue.push(item.listingPath);
+							if (item.statModel.isDir) {
+								if (
+									pruneExcludedDirs &&
+									vaultPath.length > 0 &&
+									!needIncludeFromGlobRules(vaultPath, inclusions, exclusions)
+								)
+									continue;
+								queue.push(item.listingPath);
+							}
 						}
 						reportProgress(currentPath);
 					} catch (error) {
