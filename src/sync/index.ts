@@ -9,6 +9,7 @@ import type {
 } from '~/events';
 import type { SyncExecutionRequest } from '~/services/sync-executor.service';
 import DeleteConfirmModal from '~/components/DeleteConfirmModal';
+import DeletionGuardModal from '~/components/DeletionGuardModal';
 import { syncRun, syncCancel, updateSyncRunSnapshot } from '~/events';
 import finalizeSyncRun from '~/events/sync-terminate';
 import { statItem } from '~/fs/vault';
@@ -44,6 +45,17 @@ type SyncResultSummary = {
 	failedTasks: number;
 	failed: Array<SyncFailedTaskInfo>;
 };
+
+/** Task names that delete local files (this device). */
+const LOCAL_DELETE_TASK_NAMES: ReadonlySet<string> = new Set([
+	'removeLocal',
+	'removeLocalRecursively',
+]);
+/** Task names that delete remote files (propagate to other devices). */
+const REMOTE_DELETE_TASK_NAMES: ReadonlySet<string> = new Set([
+	'removeRemote',
+	'removeRemoteRecursively',
+]);
 
 export default class SyncEngine {
 	isCancelled = false;
@@ -125,6 +137,37 @@ export default class SyncEngine {
 					stage: 'completed_noop',
 				});
 				return currentRun;
+			}
+
+			// Deletion safety guard (defense-in-depth): if this run would delete more
+			// files than the limit, make the user confirm before anything is removed.
+			// Covers BOTH local and remote deletions (remote deletions propagate to
+			// other devices, so they're the dangerous ones).
+			if (settings.deletionGuardThreshold > 0) {
+				const localDeletes = tasks.filter((task) =>
+					LOCAL_DELETE_TASK_NAMES.has(task.name),
+				).length;
+				const remoteDeletes = tasks.filter((task) =>
+					REMOTE_DELETE_TASK_NAMES.has(task.name),
+				).length;
+				if (localDeletes + remoteDeletes > settings.deletionGuardThreshold) {
+					logger.warn(
+						`Deletion guard: ${localDeletes + remoteDeletes} deletions exceed limit ${settings.deletionGuardThreshold}`,
+					);
+					currentRun = updateSyncRunSnapshot(currentRun, {
+						stage: 'awaiting_confirmation',
+						timestamps: { confirmationStartedAt: Date.now() },
+					});
+					syncRun(currentRun);
+					const proceed = await new DeletionGuardModal(this.app, {
+						local: localDeletes,
+						remote: remoteDeletes,
+					}).openAndWait();
+					if (!proceed) {
+						currentRun = finalizeSyncRun(currentRun, { stage: 'cancelled' });
+						return currentRun;
+					}
+				}
 			}
 
 			const displayableTasks = tasks.filter((task) => this.isDisplayableTask(task));

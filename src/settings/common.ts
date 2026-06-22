@@ -189,6 +189,23 @@ export default class CommonSettings extends BaseSettings {
 					}),
 			);
 
+		new Setting(this.containerEl)
+			.setName('Deletion safety limit')
+			.setDesc(
+				'If a single sync would delete more than this many files (local + remote), ' +
+					'pause and ask for confirmation first. 0 disables the guard.',
+			)
+			.addText((text) =>
+				text
+					.setValue(String(this.plugin.settings.deletionGuardThreshold))
+					.onChange((value) => {
+						const n = parseInt(value, 10);
+						this.plugin.settings.deletionGuardThreshold =
+							Number.isFinite(n) && n >= 0 ? n : 0;
+						void this.plugin.saveSettings();
+					}),
+			);
+
 		// ---- Status & notifications -----------------------------------------
 		new Setting(this.containerEl).setName('Status & notifications').setHeading();
 

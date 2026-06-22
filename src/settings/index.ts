@@ -58,6 +58,9 @@ export type PluginSettings = {
 	unmergeableStrategy: UnmergeableStrategy;
 	confirmBeforeSync: boolean;
 	confirmBeforeDeleteInAutoSync: boolean;
+	/** If a single sync would delete more than this many files (local + remote),
+	 * ask the user to confirm first. 0 disables the guard. */
+	deletionGuardThreshold: number;
 	fastRealtimeSync: boolean;
 	filterRules: {
 		exclusionRules: Array<GlobMatchOptions>;
