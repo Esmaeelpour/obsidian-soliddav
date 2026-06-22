@@ -30,7 +30,7 @@ import {
 	isSyncCancelledError,
 	toError,
 } from './errors';
-import { acquireRemoteLock, releaseRemoteLock } from './remote-lock';
+import { acquireRemoteLock, getStableLockOwner, releaseRemoteLock } from './remote-lock';
 import AddRecordTask from './tasks/add-record.task';
 import CleanRecordTask from './tasks/clean-record.task';
 import MkdirRemoteTask from './tasks/mkdir-remote.task';
@@ -61,7 +61,7 @@ export default class SyncEngine {
 	isCancelled = false;
 
 	/** Per-instance identity for the advisory remote lock. */
-	private readonly lockOwner = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+	private readonly lockOwner = getStableLockOwner();
 
 	private readonly unsubscribeSyncCancel: () => void;
 

@@ -10,7 +10,28 @@ import logger from '~/utils/logger';
  * crashed client from blocking syncing forever.
  */
 
-const DEFAULT_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_TTL_MS = 2 * 60 * 1000;
+
+/**
+ * A stable lock-owner id for THIS device, persisted across syncs and restarts.
+ * Critical: if the owner changed every run, a sync interrupted before releasing
+ * its lock (common on mobile) would leave a lock that the device's own next run
+ * sees as "someone else's" and refuses — blocking its own syncs. With a stable
+ * id, a device always recognizes and overrides its own leftover lock.
+ */
+export function getStableLockOwner(): string {
+	const KEY = 'soliddav-lock-owner';
+	try {
+		let value = localStorage.getItem(KEY);
+		if (!value) {
+			value = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+			localStorage.setItem(KEY, value);
+		}
+		return value;
+	} catch {
+		return `dev-${Math.random().toString(36).slice(2, 10)}`;
+	}
+}
 
 type LockPayload = {
 	owner: string;
