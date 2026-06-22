@@ -9,7 +9,10 @@ export function createStorageUnavailableError(cause: unknown): Error {
 	return new Error('Sync state storage unavailable');
 }
 
-export const STORAGE_NAME = 'obsidian-webdav-sync';
+// Namespaced per plugin so SolidDAV never shares its sync-state baseline with
+// another WebDAV-sync plugin (e.g. the upstream WebDAV Sync). Sharing the DB
+// entangles baselines across plugins and causes spurious deletions/conflicts.
+export const STORAGE_NAME = 'obsidian-soliddav';
 export const SYNC_STATE_STORE_NAME = 'sync-state';
 export const BASE_TEXT_STORE_NAME = 'base-text';
 export const FILE_CHUNK_STORE_NAME = 'file-chunk';
