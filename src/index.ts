@@ -96,7 +96,9 @@ export default class WebDAVSyncPlugin extends Plugin {
 		remoteDir: normalizeBaseDir(this.app.vault.getName()),
 		scheduledSync: {
 			enabled: false,
-			value: 6000,
+			// 5 minutes. The upstream default of 6s hammers the server (and races
+			// other syncers) far too aggressively for a full sync.
+			value: 300000,
 		},
 		serverUrl: '',
 		showSyncStatusInNotificationOnMobile: false,
