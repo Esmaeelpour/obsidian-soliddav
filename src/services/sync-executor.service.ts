@@ -123,7 +123,16 @@ export default class SyncExecutorService {
 
 	/** Count files that differ between the local vault and the server. Both
 	 * traversals already apply the same filter rules. Size is compared unless
-	 * encryption is on (encrypted sizes differ), in which case presence only. */
+	 * encryption is on (encrypted sizes differ), in which case presence only.
+	 *
+	 * Unlike a real sync, this is baseline-independent, so the only cross-device
+	 * signal available is byte size — etag/mtime are unreliable across devices.
+	 * Some WebDAV servers omit `getcontentlength` from directory listings, which
+	 * parses as size 0 (see fs/webdav/api.ts). If we naively compared that, every
+	 * non-empty file would look different and the status would be stuck on
+	 * "Pending" forever, even though real syncs (which use etags/baseline)
+	 * succeed. So a size difference is only trusted when the remote reports a
+	 * positive size — an unreported (0) remote size is treated as "unknown". */
 	private async compareLocalAndRemote(): Promise<number> {
 		const [localStats, remoteStats] = await Promise.all([
 			traverseVault({ vault: this.plugin.app.vault }),
@@ -132,16 +141,31 @@ export default class SyncExecutorService {
 		const compareSize = !this.plugin.settings.encryption.enabled;
 		const paths = new Set<string>([...localStats.keys(), ...remoteStats.keys()]);
 		let pending = 0;
+		const diffs: Array<string> = [];
 		for (const path of paths) {
 			const local = localStats.get(path);
 			const remote = remoteStats.get(path);
 			if (!local || !remote) {
 				// Present on only one side — count it only if a file (not a folder).
-				if ((local && !local.isDir) || (remote && !remote.isDir)) pending++;
+				if ((local && !local.isDir) || (remote && !remote.isDir)) {
+					pending++;
+					diffs.push(`${path} (only ${local ? 'local' : 'remote'})`);
+				}
 				continue;
 			}
 			if (local.isDir || remote.isDir) continue; // folders are implicit
-			if (compareSize && local.size !== remote.size) pending++;
+			/* Skip when the server didn't report a size (remote.size === 0): a truly
+			 * empty file can't be told apart from an unreported length, so treating
+			 * it as a difference would risk a permanently "Pending" status. */
+			if (compareSize && remote.size > 0 && local.size !== remote.size) {
+				pending++;
+				diffs.push(`${path} (size ${local.size} local vs ${remote.size} remote)`);
+			}
+		}
+		if (diffs.length > 0) {
+			const shown = diffs.slice(0, 20).join(', ');
+			const overflow = diffs.length > 20 ? `, …(+${diffs.length - 20} more)` : '';
+			logger.debug(`Monitor: ${pending} pending file(s): ${shown}${overflow}`);
 		}
 		return pending;
 	}
