@@ -7,7 +7,7 @@ import finalizeSyncRun from '~/events/sync-terminate';
 import { traverseVault } from '~/fs/vault';
 import { traverseWebDAV } from '~/fs/webdav';
 import SyncEngine from '~/sync';
-import { isSyncCancelledError } from '~/sync/errors';
+import { isRemoteBaseDirNotFoundError, isSyncCancelledError } from '~/sync/errors';
 import logger from '~/utils/logger';
 import waitUntil from '~/utils/wait-until';
 
@@ -113,7 +113,9 @@ export default class SyncExecutorService {
 			return { executed: false };
 		} catch (error) {
 			logger.error('Monitor check failed', error);
-			this.plugin.observabilityService.reportMonitorResult({ error: true });
+			this.plugin.observabilityService.reportMonitorResult(
+				isRemoteBaseDirNotFoundError(error) ? { remoteMissing: true } : { error: true },
+			);
 			return { executed: false };
 		} finally {
 			this.plugin.clearSyncEncryptionKeys();

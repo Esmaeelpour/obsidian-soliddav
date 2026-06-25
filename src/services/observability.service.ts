@@ -58,17 +58,23 @@ export default class ObservabilityService {
 	}
 
 	/** Monitor mode: report whether the local vault matches the server. */
-	reportMonitorResult(result: { pending?: number; error?: boolean; notConfigured?: boolean }) {
+	reportMonitorResult(result: {
+		pending?: number;
+		error?: boolean;
+		notConfigured?: boolean;
+		remoteMissing?: boolean;
+	}) {
 		this.stopTimeUpdates();
 		let text: string;
 		if (result.notConfigured) text = 'Not set up';
+		else if (result.remoteMissing) text = 'Remote folder missing';
 		else if (result.error) text = 'Offline';
 		else if ((result.pending ?? 0) === 0) text = 'Synced';
 		else text = 'Pending';
 		this.lastMonitorText = text;
 		this.syncStatusBar.setText(text);
 		this.plugin.ribbonManager.setStatusTooltip(text);
-		this.plugin.ribbonManager.setError(Boolean(result.error));
+		this.plugin.ribbonManager.setError(Boolean(result.error) || Boolean(result.remoteMissing));
 	}
 
 	private setCurrentStatus(text: string): void {

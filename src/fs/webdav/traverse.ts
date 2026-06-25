@@ -1,7 +1,8 @@
 import type { StatsMap } from '~/types';
 import apiLimiter from '~/composable/api-limiter';
-import { normalizePathToRelative } from '~/platform/path';
+import { normalizePathToRelative, normalizeRemotePath } from '~/platform/path';
 import { useSettings } from '~/settings';
+import { RemoteBaseDirNotFoundError } from '~/sync/errors';
 import { decryptRemotePathForTraversal } from '~/utils/encryption';
 import { buildRules, needIncludeFromGlobRules } from '~/utils/glob-match';
 import isRetryableError from '~/utils/is-retryable-error';
@@ -33,6 +34,7 @@ export default async function traverse({
 		await useSettings();
 	const encrypted = (await useSettings()).encryption.enabled;
 	const result: StatsMap = new Map();
+	const baseDirNormalized = normalizeRemotePath(remoteDir);
 
 	const getContentFunc = (path: string) =>
 		apiLimiter.wrap(getDirectoryContents)(serverUrl, token, path, exhaustiveRemoteTraversal);
@@ -52,9 +54,18 @@ export default async function traverse({
 		}
 	};
 
+	const getRootContent = async () => {
+		try {
+			return await getContent(remoteDir);
+		} catch (error) {
+			if (isNotFoundError(error)) throw new RemoteBaseDirNotFoundError(remoteDir);
+			throw error;
+		}
+	};
+
 	if (exhaustiveRemoteTraversal) {
 		const resultItems = await Promise.all(
-			(await getContent(remoteDir)).map(async (stat) => {
+			(await getRootContent()).map(async (stat) => {
 				if (encrypted) stat.path = await decryptRemotePathForTraversal(stat.path);
 				return stat;
 			}),
@@ -123,6 +134,14 @@ export default async function traverse({
 					} catch (error) {
 						logger.error(`Error processing ${currentPath}`, error);
 						if (isNotFoundError(error)) {
+							/* A 404 on the configured sync root means the remote folder
+							 * doesn't exist (wrong path/case). Surface it — swallowing it
+							 * would leave the remote listing empty, so monitor mode would
+							 * report a misleading "Pending" and a full sync would try to
+							 * push the whole vault. A 404 on a descendant is tolerated: it
+							 * was likely deleted mid-walk. */
+							if (normalizeRemotePath(currentPath) === baseDirNormalized)
+								throw new RemoteBaseDirNotFoundError(remoteDir);
 							reportProgress(currentPath);
 							return;
 						}
