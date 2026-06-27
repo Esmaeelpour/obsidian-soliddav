@@ -76,6 +76,15 @@ export type PluginSettings = {
 	scheduledSync: ToggleNumericSettingsField; // Value is interval
 };
 
+type TabId = 'connection' | 'sync' | 'advanced' | 'developer';
+
+const TABS: Array<{ id: TabId; label: string }> = [
+	{ id: 'connection', label: 'Connection' },
+	{ id: 'sync', label: 'Sync' },
+	{ id: 'advanced', label: 'Advanced' },
+	{ id: 'developer', label: 'Developer' },
+];
+
 export class SyncSettingTab extends PluginSettingTab {
 	plugin: WebDAVSyncPlugin;
 	accountSettings: AccountSettings;
@@ -83,47 +92,69 @@ export class SyncSettingTab extends PluginSettingTab {
 	filterSettings: FilterSettings;
 	logSettings: DevelopmentSettings;
 	controlsSettings: ControlsSettings;
+	private activeTab: TabId = 'connection';
 
 	constructor(app: App, plugin: WebDAVSyncPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
-		this.accountSettings = new AccountSettings(
-			this.app,
-			this.plugin,
-			this,
-			this.containerEl.createDiv(),
-		);
-		this.commonSettings = new CommonSettings(
-			this.app,
-			this.plugin,
-			this,
-			this.containerEl.createDiv(),
-		);
-		this.controlsSettings = new ControlsSettings(
-			this.app,
-			this.plugin,
-			this,
-			this.containerEl.createDiv(),
-		);
-		this.filterSettings = new FilterSettings(
-			this.app,
-			this.plugin,
-			this,
-			this.containerEl.createDiv(),
-		);
-		this.logSettings = new DevelopmentSettings(
-			this.app,
-			this.plugin,
-			this,
-			this.containerEl.createDiv(),
-		);
+		// Dummy div — each sub-class gets a real container assigned in display().
+		const dummy = document.createElement('div');
+		this.accountSettings = new AccountSettings(this.app, this.plugin, this, dummy);
+		this.commonSettings = new CommonSettings(this.app, this.plugin, this, dummy);
+		this.controlsSettings = new ControlsSettings(this.app, this.plugin, this, dummy);
+		this.filterSettings = new FilterSettings(this.app, this.plugin, this, dummy);
+		this.logSettings = new DevelopmentSettings(this.app, this.plugin, this, dummy);
 	}
 
 	display() {
-		this.accountSettings.display();
-		this.commonSettings.display();
-		this.controlsSettings.display();
-		this.filterSettings.display();
-		this.logSettings.display();
+		this.containerEl.empty();
+
+		// Tab navigation bar
+		const nav = this.containerEl.createDiv({ cls: 'soliddav-tab-nav' });
+		for (const { id, label } of TABS) {
+			const btn = nav.createEl('button', {
+				cls: 'soliddav-tab-btn',
+				text: label,
+			});
+			if (this.activeTab === id) btn.addClass('is-active');
+			btn.addEventListener('click', () => {
+				this.activeTab = id;
+				this.display();
+			});
+		}
+
+		// Content area — each sub-class renders into its own sub-div so that
+		// their internal this.display() calls only clear their own region.
+		const content = this.containerEl.createDiv({ cls: 'soliddav-tab-content' });
+
+		switch (this.activeTab) {
+			case 'connection': {
+				const el = content.createDiv();
+				this.accountSettings.setContainer(el);
+				this.accountSettings.display();
+				break;
+			}
+			case 'sync': {
+				const el = content.createDiv();
+				this.commonSettings.setContainer(el);
+				this.commonSettings.display();
+				break;
+			}
+			case 'advanced': {
+				const perfEl = content.createDiv();
+				this.controlsSettings.setContainer(perfEl);
+				this.controlsSettings.display();
+				const filterEl = content.createDiv();
+				this.filterSettings.setContainer(filterEl);
+				this.filterSettings.display();
+				break;
+			}
+			case 'developer': {
+				const el = content.createDiv();
+				this.logSettings.setContainer(el);
+				this.logSettings.display();
+				break;
+			}
+		}
 	}
 }

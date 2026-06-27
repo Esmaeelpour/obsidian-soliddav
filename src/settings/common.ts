@@ -28,13 +28,10 @@ export default class CommonSettings extends BaseSettings {
 			);
 
 		// ---- Automatic sync -------------------------------------------------
-		new Setting(this.containerEl)
-			.setName('Automatic sync')
-			.setDesc('Sync without pressing the button. Turn any of these on.')
-			.setHeading();
+		const autoSyncEl = this.makeSection('Automatic sync');
 
 		generateSettingEntry({
-			container: this.containerEl,
+			container: autoSyncEl,
 			desc: t('settings.realtimeSync.desc'),
 			field: this.plugin.settings.realtimeSync,
 			name: t('settings.realtimeSync.name'),
@@ -43,7 +40,7 @@ export default class CommonSettings extends BaseSettings {
 			type: UserInputType.Time,
 		});
 
-		new Setting(this.containerEl)
+		new Setting(autoSyncEl)
 			.setName(t('settings.fastRealtimeSync.name'))
 			.setDesc(t('settings.fastRealtimeSync.desc'))
 			.addToggle((toggle) =>
@@ -54,7 +51,7 @@ export default class CommonSettings extends BaseSettings {
 			);
 
 		generateSettingEntry({
-			container: this.containerEl,
+			container: autoSyncEl,
 			desc: t('settings.startupSync.desc'),
 			field: this.plugin.settings.startupSync,
 			name: t('settings.startupSync.name'),
@@ -64,7 +61,7 @@ export default class CommonSettings extends BaseSettings {
 		});
 
 		generateSettingEntry({
-			container: this.containerEl,
+			container: autoSyncEl,
 			desc: t('settings.scheduledSync.desc'),
 			field: this.plugin.settings.scheduledSync,
 			name: t('settings.scheduledSync.name'),
@@ -85,12 +82,9 @@ export default class CommonSettings extends BaseSettings {
 		});
 
 		// ---- Conflict handling ----------------------------------------------
-		new Setting(this.containerEl)
-			.setName('Conflict handling')
-			.setDesc('What happens when the same file changed in two places.')
-			.setHeading();
+		const conflictEl = this.makeSection('Conflict handling');
 
-		new Setting(this.containerEl)
+		new Setting(conflictEl)
 			.setName(t('settings.conflictStrategy.name'))
 			.setDesc(t('settings.conflictStrategy.desc'))
 			.addDropdown((dropdown) =>
@@ -126,7 +120,7 @@ export default class CommonSettings extends BaseSettings {
 			);
 
 		if (this.plugin.settings.conflictStrategy === ConflictStrategy.DiffMatchPatch)
-			new Setting(this.containerEl)
+			new Setting(conflictEl)
 				.setName(t('settings.unmergeableStrategy.name'))
 				.setDesc(t('settings.unmergeableStrategy.desc'))
 				.addDropdown((dropdown) =>
@@ -151,7 +145,7 @@ export default class CommonSettings extends BaseSettings {
 						}),
 				);
 
-		new Setting(this.containerEl)
+		new Setting(conflictEl)
 			.setName(t('settings.useGitStyle.name'))
 			.setDesc(t('settings.useGitStyle.desc'))
 			.addToggle((toggle) =>
@@ -162,12 +156,9 @@ export default class CommonSettings extends BaseSettings {
 			);
 
 		// ---- Sync safety ----------------------------------------------------
-		new Setting(this.containerEl)
-			.setName('Sync safety')
-			.setDesc('Ask before potentially destructive actions.')
-			.setHeading();
+		const safetyEl = this.makeSection('Sync safety');
 
-		new Setting(this.containerEl)
+		new Setting(safetyEl)
 			.setName(t('settings.confirmBeforeSync.name'))
 			.setDesc(t('settings.confirmBeforeSync.desc'))
 			.addToggle((toggle) =>
@@ -177,7 +168,7 @@ export default class CommonSettings extends BaseSettings {
 				}),
 			);
 
-		new Setting(this.containerEl)
+		new Setting(safetyEl)
 			.setName(t('settings.confirmBeforeDeleteInAutoSync.name'))
 			.setDesc(t('settings.confirmBeforeDeleteInAutoSync.desc'))
 			.addToggle((toggle) =>
@@ -189,7 +180,7 @@ export default class CommonSettings extends BaseSettings {
 					}),
 			);
 
-		new Setting(this.containerEl)
+		new Setting(safetyEl)
 			.setName('Deletion safety limit')
 			.setDesc(
 				'If a single sync would delete more than this many files (local + remote), ' +
@@ -207,12 +198,12 @@ export default class CommonSettings extends BaseSettings {
 			);
 
 		// ---- Status & notifications -----------------------------------------
-		new Setting(this.containerEl).setName('Status & notifications').setHeading();
+		const statusEl = this.makeSection('Status & notifications');
 
 		if (Platform.isMobile)
 			// Mobile has no status bar — status rides on the ribbon icon; this only
 			// controls the optional brief popup on success.
-			new Setting(this.containerEl)
+			new Setting(statusEl)
 				.setName('Notify after every sync')
 				.setDesc(
 					'Pop a notice after every sync, including ones that changed nothing. ' +
@@ -230,14 +221,14 @@ export default class CommonSettings extends BaseSettings {
 				);
 		else
 			// Desktop: status is always in the status bar; no notification toggle.
-			new Setting(this.containerEl)
+			new Setting(statusEl)
 				.setName('Sync status')
 				.setDesc('Shown in the status bar at the bottom of the window.');
 
 		// ---- Advanced -------------------------------------------------------
-		new Setting(this.containerEl).setName('Advanced').setHeading();
+		const advancedEl = this.makeSection('Advanced', false);
 
-		new Setting(this.containerEl)
+		new Setting(advancedEl)
 			.setName(t('settings.exhaustiveRemoteTraversal.name'))
 			.setDesc(t('settings.exhaustiveRemoteTraversal.desc'))
 			.addToggle((toggle) =>

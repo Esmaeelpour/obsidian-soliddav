@@ -7,9 +7,10 @@ import BaseSettings from './settings.base';
 export default class DevelopmentSettings extends BaseSettings {
 	display() {
 		this.containerEl.empty();
-		new Setting(this.containerEl).setName(t('settings.sections.development')).setHeading();
 
-		new Setting(this.containerEl)
+		const devEl = this.makeSection(t('settings.sections.development'));
+
+		new Setting(devEl)
 			.setName(t('settings.clearRecords.name'))
 			.setDesc(t('settings.clearRecords.desc'))
 			.addButton((button) =>
@@ -23,7 +24,7 @@ export default class DevelopmentSettings extends BaseSettings {
 					.onClick(() => void this.clearAllRecords()),
 			);
 
-		new Setting(this.containerEl)
+		new Setting(devEl)
 			.setName(t('settings.log.name'))
 			.setDesc(t('settings.log.desc'))
 			.addButton((button) => {

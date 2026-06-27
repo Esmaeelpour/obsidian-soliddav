@@ -142,3 +142,87 @@
 		flex-direction: column;
 	}
 }
+
+/* ---- Settings tab navigation -------------------------------------------- */
+
+.soliddav-tab-nav {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	padding-bottom: 16px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	margin-bottom: 4px;
+}
+
+.soliddav-tab-btn {
+	padding: 5px 14px;
+	border-radius: var(--radius-m);
+	border: 1px solid transparent;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: var(--font-ui-small);
+	font-weight: 500;
+	line-height: 1.4;
+	transition: background 0.1s ease, color 0.1s ease;
+}
+
+.soliddav-tab-btn:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.soliddav-tab-btn.is-active {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+/* ---- Collapsible sections ----------------------------------------------- */
+
+.soliddav-section {
+	margin-bottom: 4px;
+}
+
+.soliddav-section-summary {
+	cursor: pointer;
+	list-style: none;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 10px 2px;
+	font-size: var(--font-ui-medium);
+	font-weight: 600;
+	color: var(--text-normal);
+	border-bottom: 1px solid var(--background-modifier-border);
+	user-select: none;
+}
+
+.soliddav-section-summary::-webkit-details-marker {
+	display: none;
+}
+
+.soliddav-section-summary::before {
+	content: '›';
+	display: inline-block;
+	width: 14px;
+	text-align: center;
+	transition: transform 0.15s ease;
+	color: var(--text-muted);
+	font-size: 18px;
+	line-height: 1;
+	flex-shrink: 0;
+}
+
+details.soliddav-section[open] > .soliddav-section-summary::before {
+	transform: rotate(90deg);
+}
+
+.soliddav-section-body {
+	padding: 2px 0 6px 0;
+}
+
+/* Remove the top border on the first setting-item inside a section body
+   since the summary's border-bottom already acts as a separator. */
+.soliddav-section-body > .setting-item:first-child {
+	border-top: none;
+}

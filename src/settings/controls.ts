@@ -7,16 +7,11 @@ import BaseSettings from './settings.base';
 export default class ControlsSettings extends BaseSettings {
 	display() {
 		this.containerEl.empty();
-		new Setting(this.containerEl)
-			.setName(t('settings.sections.control'))
-			.setDesc(
-				'Performance & rate-limit tuning. The defaults work for most setups — ' +
-					'only change these if syncing feels slow or your server returns rate-limit errors.',
-			)
-			.setHeading();
+
+		const perfEl = this.makeSection(t('settings.sections.control'));
 
 		generateSettingEntry({
-			container: this.containerEl,
+			container: perfEl,
 			desc: t('settings.skipLargeFiles.desc'),
 			field: this.plugin.settings.skipLargeFiles,
 			name: t('settings.skipLargeFiles.name'),
@@ -27,7 +22,7 @@ export default class ControlsSettings extends BaseSettings {
 		});
 
 		generateSettingEntry({
-			container: this.containerEl,
+			container: perfEl,
 			desc: t('settings.maxWebDAVConcurrency.desc'),
 			field: this.plugin.settings.maxWebDAVConcurrency,
 			name: t('settings.maxWebDAVConcurrency.name'),
@@ -39,7 +34,7 @@ export default class ControlsSettings extends BaseSettings {
 		});
 
 		generateSettingEntry({
-			container: this.containerEl,
+			container: perfEl,
 			desc: t('settings.maxSyncTaskConcurrency.desc'),
 			field: this.plugin.settings.maxSyncTaskConcurrency,
 			name: t('settings.maxSyncTaskConcurrency.name'),
@@ -50,7 +45,7 @@ export default class ControlsSettings extends BaseSettings {
 		});
 
 		generateSettingEntry({
-			container: this.containerEl,
+			container: perfEl,
 			desc: t('settings.minWebDAVRequestInterval.desc'),
 			field: this.plugin.settings.minWebDAVRequestInterval,
 			name: t('settings.minWebDAVRequestInterval.name'),
@@ -61,7 +56,7 @@ export default class ControlsSettings extends BaseSettings {
 		});
 
 		generateSettingEntry({
-			container: this.containerEl,
+			container: perfEl,
 			desc: t('settings.maxThroughputConcurrency.desc'),
 			field: this.plugin.settings.maxThroughputConcurrency,
 			name: t('settings.maxThroughputConcurrency.name'),

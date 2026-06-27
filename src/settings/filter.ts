@@ -6,10 +6,11 @@ import BaseSettings from './settings.base';
 export default class FilterSettings extends BaseSettings {
 	display() {
 		this.containerEl.empty();
-		new Setting(this.containerEl).setName(t('settings.sections.filters')).setHeading();
+
+		const filterEl = this.makeSection(t('settings.sections.filters'));
 
 		// Inclusion
-		new Setting(this.containerEl)
+		new Setting(filterEl)
 			.setName(t('settings.filters.include.name'))
 			.setDesc(t('settings.filters.include.desc'))
 			.addButton((button) => {
@@ -28,7 +29,7 @@ export default class FilterSettings extends BaseSettings {
 			});
 
 		// Exclusion
-		new Setting(this.containerEl)
+		new Setting(filterEl)
 			.setName(t('settings.filters.exclude.name'))
 			.setDesc(t('settings.filters.exclude.desc'))
 			.addButton((button) => {

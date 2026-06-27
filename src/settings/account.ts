@@ -14,9 +14,12 @@ export default class AccountSettings extends BaseSettings {
 		let remoteBaseDirText: TextComponent | undefined;
 		this.containerEl.empty();
 
+		// ---- Server & credentials -------------------------------------------
+		const serverEl = this.makeSection('Server & credentials');
+
 		// One-time onboarding: shown only until the connection is configured.
 		if (!this.plugin.isAccountConfigured())
-			new Setting(this.containerEl)
+			new Setting(serverEl)
 				.setName('Quick start')
 				.setDesc(
 					'1. Choose a Connection type below — Nextcloud for one-click browser ' +
@@ -28,12 +31,12 @@ export default class AccountSettings extends BaseSettings {
 				)
 				.setClass('whitespace-pre-line');
 
-		new Setting(this.containerEl)
+		new Setting(serverEl)
 			.setName(t('settings.tips.name'))
 			.setDesc(t('settings.tips.desc'))
 			.setClass('whitespace-pre-line');
 
-		new Setting(this.containerEl)
+		new Setting(serverEl)
 			.setName('Connection')
 			.setDesc(
 				this.plugin.isAccountConfigured()
@@ -42,7 +45,7 @@ export default class AccountSettings extends BaseSettings {
 			)
 			.setHeading();
 
-		this.displayModeSelector();
+		this.displayModeSelector(serverEl);
 
 		const isNextcloud = this.plugin.settings.connectionType === 'nextcloud';
 		const loggedIn = isNextcloud && this.plugin.isAccountConfigured();
@@ -50,7 +53,7 @@ export default class AccountSettings extends BaseSettings {
 		// In Nextcloud mode, hide the URL field once logged in (it's managed for
 		// you); the status line below shows the connection instead.
 		if (!loggedIn)
-			new Setting(this.containerEl)
+			new Setting(serverEl)
 				.setName(isNextcloud ? 'Nextcloud server URL' : t('settings.serverUrl.name'))
 			.setDesc(
 				isNextcloud
@@ -88,10 +91,10 @@ export default class AccountSettings extends BaseSettings {
 			});
 
 		if (isNextcloud) {
-			if (loggedIn) this.displayNextcloudStatus();
-			else this.displayNextcloudLogin();
+			if (loggedIn) this.displayNextcloudStatus(serverEl);
+			else this.displayNextcloudLogin(serverEl);
 		} else {
-			new Setting(this.containerEl)
+			new Setting(serverEl)
 				.setName(t('settings.account.name'))
 				.setDesc(t('settings.account.desc'))
 				.addText((text) => {
@@ -106,7 +109,7 @@ export default class AccountSettings extends BaseSettings {
 					});
 				});
 
-			new Setting(this.containerEl)
+			new Setting(serverEl)
 				.setName(t('settings.credential.name'))
 				.setDesc(t('settings.credential.desc'))
 				.addComponent((element) =>
@@ -121,9 +124,12 @@ export default class AccountSettings extends BaseSettings {
 				);
 		}
 
-		this.displayCheckConnection();
+		this.displayCheckConnection(serverEl);
 
-		new Setting(this.containerEl)
+		// ---- Remote storage & security --------------------------------------
+		const storageEl = this.makeSection('Remote storage & security');
+
+		new Setting(storageEl)
 			.setName(t('settings.remoteDir.name'))
 			.setDesc(t('settings.remoteDir.desc'))
 			.addText((text) => {
@@ -153,7 +159,7 @@ export default class AccountSettings extends BaseSettings {
 				});
 			});
 
-		new Setting(this.containerEl)
+		new Setting(storageEl)
 			.setName(t('settings.encryption.name'))
 			.setDesc(t('settings.encryption.desc'))
 			.addToggle((toggle) => {
@@ -173,7 +179,7 @@ export default class AccountSettings extends BaseSettings {
 
 		// Only show the password field when encryption is actually on.
 		if (this.plugin.settings.encryption.enabled)
-			new Setting(this.containerEl)
+			new Setting(storageEl)
 				.setName('Encryption password')
 				.setDesc('Password used to encrypt files before upload. Keep it safe — files cannot be recovered without it.')
 				.addComponent((element) =>
@@ -188,8 +194,8 @@ export default class AccountSettings extends BaseSettings {
 				);
 	}
 
-	private displayModeSelector() {
-		new Setting(this.containerEl)
+	private displayModeSelector(el: HTMLElement) {
+		new Setting(el)
 			.setName('Connection type')
 			.setDesc(
 				'Nextcloud: log in via your browser (SSO supported); account and credential ' +
@@ -208,7 +214,7 @@ export default class AccountSettings extends BaseSettings {
 			});
 	}
 
-	private displayNextcloudStatus() {
+	private displayNextcloudStatus(el: HTMLElement) {
 		const { account, serverUrl } = this.plugin.settings;
 		let host = serverUrl;
 		try {
@@ -216,7 +222,7 @@ export default class AccountSettings extends BaseSettings {
 		} catch {
 			/* keep raw value */
 		}
-		new Setting(this.containerEl)
+		new Setting(el)
 			.setName('Nextcloud account')
 			.setDesc(`Logged in as ${account} at ${host}.`)
 			.addButton((button) =>
@@ -239,8 +245,8 @@ export default class AccountSettings extends BaseSettings {
 			);
 	}
 
-	private displayNextcloudLogin() {
-		new Setting(this.containerEl)
+	private displayNextcloudLogin(el: HTMLElement) {
+		new Setting(el)
 			.setName('Log in with Nextcloud')
 			.setDesc(
 				'Authorize in your browser (SSO supported). The WebDAV URL, account and ' +
@@ -287,8 +293,8 @@ export default class AccountSettings extends BaseSettings {
 		}
 	}
 
-	private displayCheckConnection() {
-		new Setting(this.containerEl)
+	private displayCheckConnection(el: HTMLElement) {
+		new Setting(el)
 			.setName(t('settings.checkConnection.name'))
 			.setDesc(t('settings.checkConnection.desc'))
 			.addButton((button) => {
