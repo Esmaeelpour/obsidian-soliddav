@@ -29,3 +29,20 @@ jobs:
             main.js
             manifest.json
             styles.css
+
+      # Only publish a release on pushes to main (not on PRs)
+      - name: Get version
+        if: github.event_name != 'pull_request'
+        id: version
+        run: echo "version=$(node -p "require('./manifest.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Create or update release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: ${{ steps.version.outputs.version }}
+          files: |
+            main.js
+            manifest.json
+            styles.css
