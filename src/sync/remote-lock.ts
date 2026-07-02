@@ -40,7 +40,7 @@ type LockPayload = {
 
 async function readLock(client: WebDAVClient): Promise<LockPayload | undefined> {
 	try {
-		if (!(await client.exists(REMOTE_LOCK_FILENAME))) return undefined;
+		// Single GET instead of exists()+getFileContents() — saves one round-trip.
 		const raw = (await client.getFileContents(REMOTE_LOCK_FILENAME, {
 			format: 'text',
 		})) as string;
@@ -49,6 +49,9 @@ async function readLock(client: WebDAVClient): Promise<LockPayload | undefined> 
 			return undefined;
 		return parsed;
 	} catch (error) {
+		const status = (error as { status?: number })?.status;
+		// 404 = no lock file yet; 405 = server doesn't support the method on this path.
+		if (status === 404 || status === 405) return undefined;
 		// A corrupt/unreadable lock is treated as absent so it can be overwritten.
 		logger.warn('Failed to read remote sync lock, treating as absent', error);
 		return undefined;
@@ -80,10 +83,9 @@ export async function acquireRemoteLock(
 export async function releaseRemoteLock(client: WebDAVClient, owner: string): Promise<void> {
 	try {
 		const existing = await readLock(client);
-		if (!existing || existing.owner === owner) {
-			if (await client.exists(REMOTE_LOCK_FILENAME))
-				await client.deleteFile(REMOTE_LOCK_FILENAME);
-		}
+		if (!existing || existing.owner === owner)
+			// Best-effort delete; ignore 404 in case another client already cleaned up.
+			await client.deleteFile(REMOTE_LOCK_FILENAME).catch(() => undefined);
 	} catch (error) {
 		logger.warn('Failed to release remote sync lock', error);
 	}

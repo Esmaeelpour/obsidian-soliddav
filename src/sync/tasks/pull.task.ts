@@ -103,6 +103,7 @@ export default class PullTask extends BaseTask<OptionsWithRemoteFileStat> {
 					: downloadedContent;
 				await this.vault.adapter.writeBinary(this.localPath, remoteContent, {
 					ctime: this.remote.mtime - 1000, // #1
+					mtime: this.remote.mtime, // #2
 				});
 			}
 
@@ -134,6 +135,16 @@ export default class PullTask extends BaseTask<OptionsWithRemoteFileStat> {
 		});
 	}
 }
+
+/* #2 Aligns the local mtime with the server's mtime so that `isChanged` sees a
+ * stable, well-known value when it compares local stats against the sync record
+ * on the next run. Without this the recorded mtime is the download timestamp
+ * (wall-clock now), which can drift slightly on mobile due to OS-level touches
+ * (iCloud sync, filesystem rounding) and produce spurious "locally changed"
+ * detections that turn into false conflicts when the remote also changed.
+ * On filesystems that don't honour the requested mtime the behaviour falls back
+ * to the previous approach (mtime = download time) — the 2 s tolerance in
+ * isSameTime absorbs the resulting small drift. */
 
 /* #1 Solves incompatibility between this plugin and obsidian-paste-image-rename
 
