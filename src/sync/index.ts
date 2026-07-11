@@ -133,7 +133,11 @@ export default class SyncEngine {
 			 * keystroke-triggered hot path — a large share of sync latency on
 			 * mobile connections. */
 			if (request.runKind !== SyncRunKind.fast) {
-				lockAcquired = await acquireRemoteLock(this.webdav, this.lockOwner);
+				// retryWebDAVCall so one flaky request (common on mobile) doesn't
+				// fail the whole run before it even starts.
+				lockAcquired = await this.retryWebDAVCall(() =>
+					acquireRemoteLock(this.webdav, this.lockOwner),
+				);
 				if (!lockAcquired) {
 					logger.info('Another client holds the remote sync lock; skipping this run');
 					return finalizeSyncRun(run, { stage: 'cancelled' });
@@ -499,9 +503,12 @@ export default class SyncEngine {
 	}
 
 	/**
-	 * Automatically handle 503 errors and retry task execution
+	 * Retry a task on transient (retryable) errors, with a hard attempt cap so a
+	 * persistently failing server degrades to a failed task instead of an
+	 * endless retry loop that pins the sync forever.
 	 */
 	private async executeWithRetry(task: BaseTask): Promise<TaskResult> {
+		const MAX_ATTEMPTS = 5;
 		let attempt = 0;
 		while (true) {
 			if (this.isCancelled)
@@ -511,7 +518,7 @@ export default class SyncEngine {
 				};
 
 			const taskResult = await task.exec();
-			if (!taskResult.success && isRetryableError(taskResult.error)) {
+			if (!taskResult.success && attempt < MAX_ATTEMPTS && isRetryableError(taskResult.error)) {
 				attempt++;
 				logger.warn('Retrying task after transient error', {
 					attempt,

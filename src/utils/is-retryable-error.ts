@@ -1,12 +1,13 @@
-const RETRYABLE_STATUS_CODES = new Set([401, 408, 425, 429, 502, 503, 504]);
+/* 423 (WebDAV Locked) and 500 are included: Nextcloud's file locking returns
+ * 423 transiently, and overloaded servers 500 briefly — both routinely succeed
+ * on retry, and every WebDAV operation this plugin issues is idempotent
+ * (PUT/MOVE with overwrite, MKCOL, DELETE, PROPFIND). */
+const RETRYABLE_STATUS_CODES = new Set([401, 408, 423, 425, 429, 500, 502, 503, 504]);
 
 const RETRYABLE_MESSAGE_PATTERNS = [
-	/\bnet::ERR_CONNECTION_CLOSED\b/i,
-	/\bnet::ERR_CONNECTION_RESET\b/i,
-	/\bnet::ERR_CONNECTION_ABORTED\b/i,
-	/\bnet::ERR_CONNECTION_TIMED_OUT\b/i,
-	/\bnet::ERR_NETWORK_CHANGED\b/i,
-	/\bnet::ERR_INTERNET_DISCONNECTED\b/i,
+	// Chromium/WebView network errors (desktop Electron + Android) — all
+	// net::ERR_* codes describe network-layer failures worth another attempt.
+	/\bnet::ERR_[A-Z_]+\b/,
 	/\bECONNRESET\b/i,
 	/\bECONNABORTED\b/i,
 	/\bECONNREFUSED\b/i,
@@ -19,6 +20,13 @@ const RETRYABLE_MESSAGE_PATTERNS = [
 	/\bconnection refused\b/i,
 	/\btemporarily unavailable\b/i,
 	/\btimed out\b/i,
+	// iOS (NSURLError) and generic mobile fetch failures — the messages
+	// Obsidian mobile surfaces for flaky cellular/Wi-Fi transitions.
+	/\bnetwork connection was lost\b/i,
+	/\bnetwork request failed\b/i,
+	/\bfailed to fetch\b/i,
+	/\bconnection appears to be offline\b/i,
+	/\bcould not connect to the server\b/i,
 ];
 
 type ErrorLike = {

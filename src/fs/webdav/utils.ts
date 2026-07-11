@@ -9,14 +9,6 @@ import { getStat, REMOTE_TEMP_MARKER } from './api';
 
 type PutContent = Parameters<WebDAVClient['putFileContents']>[1];
 
-function isTransientUploadError(error: unknown): boolean {
-	if (isRetryableError(error)) return true;
-	// Some servers return 500 (overload, brief lock contention) or 423 (WebDAV
-	// Locked, e.g. Nextcloud file locking) transiently during PUT/MOVE — retry.
-	const status = (error as { status?: number })?.status;
-	return status === 500 || status === 423;
-}
-
 /**
  * Upload atomically: PUT to a temp sibling, then MOVE it over the target. A PUT
  * interrupted mid-stream (common on mobile) leaves only the temp file, so the
@@ -39,7 +31,7 @@ export async function putFileContentsAtomic(
 			break;
 		} catch (error) {
 			putAttempts++;
-			if (putAttempts <= 3 && isTransientUploadError(error)) {
+			if (putAttempts <= 3 && isRetryableError(error)) {
 				logger.warn(
 					`PUT failed for ${finalPath} (attempt ${putAttempts}), retrying…`,
 					error,
@@ -57,7 +49,7 @@ export async function putFileContentsAtomic(
 			return;
 		} catch (error) {
 			moveAttempts++;
-			if (moveAttempts <= 3 && isTransientUploadError(error)) {
+			if (moveAttempts <= 3 && isRetryableError(error)) {
 				logger.warn(
 					`MOVE failed for ${finalPath} (attempt ${moveAttempts}), retrying…`,
 					error,
