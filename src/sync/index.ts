@@ -27,6 +27,7 @@ import TwoWaySyncDecider from './decision/two-way.decider';
 import {
 	SyncCancelledError,
 	SyncRetryExhaustedError,
+	isRemoteBaseDirNotFoundError,
 	isSyncCancelledError,
 	toError,
 } from './errors';
@@ -56,6 +57,11 @@ const REMOTE_DELETE_TASK_NAMES: ReadonlySet<string> = new Set([
 	'removeRemote',
 	'removeRemoteRecursively',
 ]);
+
+/** Remote base dirs confirmed to exist this session. Skips one PROPFIND per
+ * sync — meaningful on high-latency mobile connections. Cleared for a dir when
+ * a later run discovers it missing (e.g. deleted server-side). */
+const confirmedBaseDirs = new Set<string>();
 
 export default class SyncEngine {
 	isCancelled = false;
@@ -88,13 +94,22 @@ export default class SyncEngine {
 		await this.ensureRemoteBaseDirReady(syncRecord);
 		this.throwIfCancelled();
 
-		const tasks = await new TwoWaySyncDecider(this, this.options.token, syncRecord).decide({
-			onProgress,
-			throwIfCancelled: this.throwIfCancelled,
-		});
-		this.throwIfCancelled();
+		try {
+			const tasks = await new TwoWaySyncDecider(this, this.options.token, syncRecord).decide(
+				{
+					onProgress,
+					throwIfCancelled: this.throwIfCancelled,
+				},
+			);
+			this.throwIfCancelled();
 
-		return tasks;
+			return tasks;
+		} catch (error) {
+			// The dir vanished after we (or the cache) confirmed it — forget it so
+			// the next run re-checks and recreates it.
+			if (isRemoteBaseDirNotFoundError(error)) confirmedBaseDirs.delete(this.baseDirCacheKey);
+			throw error;
+		}
 	}
 
 	async start({
@@ -110,11 +125,19 @@ export default class SyncEngine {
 		try {
 			this.runKind = request.runKind;
 
-			// Take the advisory remote lock so two devices don't write concurrently.
-			lockAcquired = await acquireRemoteLock(this.webdav, this.lockOwner);
-			if (!lockAcquired) {
-				logger.info('Another client holds the remote sync lock; skipping this run');
-				return finalizeSyncRun(run, { stage: 'cancelled' });
+			/* Take the advisory remote lock so two full syncs don't interleave their
+			 * plans. Fast realtime runs skip it: they only push local edits via
+			 * atomic temp+MOVE writes and never read remote state, so interleaving
+			 * with another device is already handled by etag conflict detection on
+			 * the next normal run. Skipping saves 4 HTTP round-trips on the
+			 * keystroke-triggered hot path — a large share of sync latency on
+			 * mobile connections. */
+			if (request.runKind !== SyncRunKind.fast) {
+				lockAcquired = await acquireRemoteLock(this.webdav, this.lockOwner);
+				if (!lockAcquired) {
+					logger.info('Another client holds the remote sync lock; skipping this run');
+					return finalizeSyncRun(run, { stage: 'cancelled' });
+				}
 			}
 
 			const settings = this.settings;
@@ -342,9 +365,18 @@ export default class SyncEngine {
 		);
 	}
 
+	private get baseDirCacheKey() {
+		return `${this.settings.serverUrl}::${this.remoteBaseDir}`;
+	}
+
 	private async ensureRemoteBaseDirReady(syncRecord: SyncRecord) {
 		const webdav = this.webdav;
 		const remoteBaseDir = this.remoteBaseDir;
+
+		// Already confirmed this session — skip the PROPFIND round-trip. If the
+		// dir was deleted server-side since, the traversal's root-404 handling
+		// surfaces it and preparePlan invalidates this cache entry.
+		if (confirmedBaseDirs.has(this.baseDirCacheKey)) return;
 
 		let remoteBaseDirExists = await this.retryWebDAVCall(() => webdav.exists(remoteBaseDir));
 
@@ -372,6 +404,8 @@ export default class SyncEngine {
 				throw error;
 			}
 		}
+
+		confirmedBaseDirs.add(this.baseDirCacheKey);
 	}
 
 	private async execTaskGroup(

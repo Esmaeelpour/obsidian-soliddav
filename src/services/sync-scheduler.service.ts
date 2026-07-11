@@ -1,5 +1,6 @@
 import type { TAbstractFile } from 'obsidian';
 import type WebDAVSyncPlugin from '~';
+import { Platform } from 'obsidian';
 import type { SyncTrigger } from '~/events';
 import { syncRun } from '~/events';
 import { SyncRunKind } from '~/types';
@@ -22,6 +23,9 @@ type SyncRequest = {
 const MONITOR_POLL_MS = 30_000;
 /** Debounce after an edit before monitor mode re-checks (ms). */
 const MONITOR_EDIT_DEBOUNCE_MS = 2500;
+/** Minimum gap before an app-resume triggers a sync (ms), so quickly
+ * switching in and out of the app doesn't spam the server. */
+const RESUME_MIN_GAP_MS = 30_000;
 
 export default class SyncSchedulerService {
 	private readonly pendingRequests: Array<SyncRequest> = [];
@@ -30,6 +34,7 @@ export default class SyncSchedulerService {
 	private realtimeSyncTimer?: number;
 	private scheduledSyncTimer?: number;
 	private startupSyncTimer?: number;
+	private lastFlushEndedAt = 0;
 
 	constructor(
 		private readonly plugin: WebDAVSyncPlugin,
@@ -60,6 +65,25 @@ export default class SyncSchedulerService {
 		// can never prevent the scheduled one from running.
 		if (this.settings.scheduledSync.enabled) this.startScheduledSync();
 		else if (monitor) this.startMonitorPoll();
+
+		/* Mobile: sync when the app returns to the foreground. Timers freeze while
+		 * the app is suspended, so without this the vault sits stale until the
+		 * next edit or a scheduled interval eventually fires — the main reason
+		 * the phone feels less fresh than the desktop, which never sleeps.
+		 * Gated to setups that already opted into some form of automatic sync. */
+		if (Platform.isMobile)
+			this.plugin.registerDomEvent(document, 'visibilitychange', () => {
+				if (document.visibilityState !== 'visible') return;
+				const { realtimeSync, scheduledSync, startupSync, operatingMode } = this.settings;
+				const autoSyncEnabled =
+					realtimeSync.enabled ||
+					scheduledSync.enabled ||
+					startupSync.enabled ||
+					operatingMode === 'monitor';
+				if (!autoSyncEnabled || this.plugin.isSyncing) return;
+				if (Date.now() - this.lastFlushEndedAt < RESUME_MIN_GAP_MS) return;
+				void this.requestSync({ runKind: SyncRunKind.normal, source: 'interval' });
+			});
 
 		// https://forum.obsidian.md/t/dont-dispatch-create-event-on-startup/50022/3
 		this.plugin.app.workspace.onLayoutReady(() => {
@@ -197,6 +221,7 @@ export default class SyncSchedulerService {
 			for (const request of batch) request.reject(error);
 		} finally {
 			this.isFlushing = false;
+			this.lastFlushEndedAt = Date.now();
 		}
 	}
 }
