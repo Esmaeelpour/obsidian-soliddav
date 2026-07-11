@@ -25,14 +25,37 @@ export default class PushTask extends BaseTask<OptionsWithLocalFileStat> {
 
 			await putFileContentsAtomic(this.webdav, executionRemotePath, uploadContent);
 
+			const baseText = isMergeablePath(this.localPath)
+				? await arrayBufferToText(localContent)
+				: undefined;
+
+			/* Persist the record immediately after the upload lands, before the extra
+			 * PROPFIND round-trip. If the app is suspended/killed between the upload
+			 * and the record write (common on mobile), the stale record makes the next
+			 * run see a bogus "both sides changed" conflict against our own push and
+			 * decorate the note with merge markers. With this provisional record the
+			 * base text already equals the uploaded content, so the next run resolves
+			 * clean. The synthesized remote stat (no etag) at worst causes one
+			 * harmless self-healing pull of identical content. */
+			const provisionalRemote = {
+				isDir: false as const,
+				mtime: Date.now(),
+				path: this.remotePath,
+				size: uploadContent.byteLength,
+			};
+			await this.syncRecord.upsertRecords({
+				baseText,
+				key: this.localPath,
+				local: this.local,
+				remote: provisionalRemote,
+			});
+
 			const remote = await statItem(executionRemotePath, this.remotePath);
 			if (!remote || remote.isDir)
 				throw new Error(`failed to read remote file stat after push: ${this.localPath}`);
 
 			await this.syncRecord.upsertRecords({
-				baseText: isMergeablePath(this.localPath)
-					? await arrayBufferToText(localContent)
-					: undefined,
+				baseText,
 				key: this.localPath,
 				local: this.local,
 				remote,

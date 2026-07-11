@@ -56,7 +56,12 @@ export default class MergeTask extends BaseTask<OptionsWithBothFileStats> {
 
 			const localText = await arrayBufferToText(localBuffer);
 			const remoteText = await arrayBufferToText(remoteBuffer);
-			const baseText = (await this.syncRecord.getBaseText(this.localPath)) ?? localText;
+			/* No stored base means we can't 3-way merge. Falling back to localText
+			 * would make diff3 see local as "unchanged" and silently resolve to the
+			 * remote version — discarding the user's current edits. Fall back to
+			 * remoteText instead: local edits win and get pushed, which is the least
+			 * surprising outcome for the device the user is actively typing on. */
+			const baseText = (await this.syncRecord.getBaseText(this.localPath)) ?? remoteText;
 			let mergedText: string;
 			const mergeResult = resolveByIntelligentMerge({
 				baseContentText: baseText,
@@ -93,6 +98,20 @@ export default class MergeTask extends BaseTask<OptionsWithBothFileStats> {
 						? await encryptContentForRemoteFile(this.localPath, mergedBuffer)
 						: mergedText,
 				);
+				/* Durable record right after the remote write (see push.task.ts): if the
+				 * app is suspended before the record refresh below, the next run heals
+				 * cleanly instead of re-detecting a conflict against our own write. */
+				await this.syncRecord.upsertRecords({
+					baseText: mergedText,
+					key: this.localPath,
+					local: this.local,
+					remote: {
+						isDir: false,
+						mtime: Date.now(),
+						path: this.remotePath,
+						size: mergedBuffer.byteLength,
+					},
+				});
 				const fetchedRemoteStat = await statWebDAVItem(
 					executionRemotePath,
 					this.remotePath,

@@ -9,12 +9,12 @@ import { getStat, REMOTE_TEMP_MARKER } from './api';
 
 type PutContent = Parameters<WebDAVClient['putFileContents']>[1];
 
-function isMoveRetryable(error: unknown): boolean {
+function isTransientUploadError(error: unknown): boolean {
 	if (isRetryableError(error)) return true;
-	// MOVE returns 500 on some servers when the destination is locked or the
-	// server is briefly overloaded — treat it as transient.
+	// Some servers return 500 (overload, brief lock contention) or 423 (WebDAV
+	// Locked, e.g. Nextcloud file locking) transiently during PUT/MOVE — retry.
 	const status = (error as { status?: number })?.status;
-	return status === 500;
+	return status === 500 || status === 423;
 }
 
 /**
@@ -30,8 +30,25 @@ export async function putFileContentsAtomic(
 ): Promise<void> {
 	const rand = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 	const tempPath = `${finalPath}${REMOTE_TEMP_MARKER}${rand}.tmp`;
-	const ok = await client.putFileContents(tempPath, content, { overwrite: true });
-	if (!ok) throw new Error(`Upload failed for ${finalPath}`);
+
+	let putAttempts = 0;
+	while (true)
+		try {
+			const ok = await client.putFileContents(tempPath, content, { overwrite: true });
+			if (!ok) throw new Error(`Upload failed for ${finalPath}`);
+			break;
+		} catch (error) {
+			putAttempts++;
+			if (putAttempts <= 3 && isTransientUploadError(error)) {
+				logger.warn(
+					`PUT failed for ${finalPath} (attempt ${putAttempts}), retrying…`,
+					error,
+				);
+				await sleep(putAttempts * 2000);
+				continue;
+			}
+			throw error;
+		}
 
 	let moveAttempts = 0;
 	while (true) {
@@ -40,7 +57,7 @@ export async function putFileContentsAtomic(
 			return;
 		} catch (error) {
 			moveAttempts++;
-			if (moveAttempts <= 3 && isMoveRetryable(error)) {
+			if (moveAttempts <= 3 && isTransientUploadError(error)) {
 				logger.warn(
 					`MOVE failed for ${finalPath} (attempt ${moveAttempts}), retrying…`,
 					error,
