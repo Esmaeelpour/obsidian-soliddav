@@ -1,7 +1,7 @@
 {
 	"id": "soliddav",
 	"name": "SolidDAV",
-	"version": "1.0.9",
+	"version": "1.0.10",
 	"minAppVersion": "1.12.3",
 	"authorUrl": "https://github.com/Esmaeelpour/obsidian-soliddav",
 	"description": "Reliable WebDAV sync for your vault: Nextcloud browser login, atomic uploads, content-aware change detection, and a read-only monitor mode.",
