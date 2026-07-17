@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-soliddav",
-	"version": "1.0.0",
+	"version": "1.1.2",
 	"private": true,
 	"license": "AGPL-3.0",
 	"description": "SolidDAV — reliable WebDAV sync for Obsidian. A standalone fork of WebDAV Sync (hesprs/obsidian-webdav-sync, AGPL-3.0).",
