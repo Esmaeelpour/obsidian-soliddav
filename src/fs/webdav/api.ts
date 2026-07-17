@@ -22,16 +22,17 @@ type WebDAVPropstat = {
 	status?: string;
 };
 
-type WebDAVResponseItem = {
+export type WebDAVResponseItem = {
 	href: string;
 	propstat?: WebDAVPropstat | Array<WebDAVPropstat>;
+	status?: string;
 };
 
-function normalizePath(path: string) {
+export function normalizePath(path: string) {
 	return normalizeRemotePath(extractPathname(path));
 }
 
-function isSuccessStatus(status?: string): boolean {
+export function isSuccessStatus(status?: string): boolean {
 	if (!status) return true;
 	const match = /\s(?<code>\d{3})(?:\s|$)/.exec(status);
 	if (!match) return false;
@@ -39,7 +40,7 @@ function isSuccessStatus(status?: string): boolean {
 	return code >= 200 && code < 300;
 }
 
-function getValidProps(item: WebDAVResponseItem): WebDAVProp | undefined {
+export function getValidProps(item: WebDAVResponseItem): WebDAVProp | undefined {
 	if (!item.propstat) return undefined;
 
 	const propstats = Array.isArray(item.propstat) ? item.propstat : [item.propstat];
@@ -69,12 +70,12 @@ function extractPathname(href: string): string {
 	);
 }
 
-function buildStripPrefixes(serverUrl: string): Array<string> {
+export function buildStripPrefixes(serverUrl: string): Array<string> {
 	const endpointPath = extractPathname(serverUrl);
 	return [endpointPath];
 }
 
-function buildDirectoryUrl(serverUrl: string, _path: string): string {
+export function buildDirectoryUrl(serverUrl: string, _path: string): string {
 	const normalized = normalizeRemotePath(_path);
 	const path = normalized === '/' ? '/' : `${normalized}/`;
 	const encodedPath = path.split('/').map(encodeURIComponent).join('/');
@@ -101,7 +102,7 @@ export function isRemoteInternalPath(path: string): boolean {
 	return path.includes(REMOTE_TEMP_MARKER) || path.endsWith(REMOTE_LOCK_FILENAME);
 }
 
-function convertToFileStat(
+export function convertToFileStat(
 	stripPrefixes: Array<string>,
 	item: WebDAVResponseItem,
 ): StatModel | undefined {

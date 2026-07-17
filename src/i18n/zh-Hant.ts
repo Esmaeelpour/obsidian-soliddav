@@ -237,6 +237,7 @@ const zhHant: typeof en = {
 			removeLocalRecursively: '遞迴移除本機項目',
 			removeRemote: '移除遠端項目',
 			removeRemoteRecursively: '遞迴移除遠端項目',
+			renameRemote: '重新命名遠端項目',
 			sync: '同步',
 			upload: '上傳',
 		},

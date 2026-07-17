@@ -1,45 +1,21 @@
 import type { Vault } from 'obsidian';
-import type { StatsMap } from '~/types';
-import { normalizeVaultPath } from '~/platform/path';
 import { useSettings } from '~/settings';
-import logger from '~/utils/logger';
 import postTraversal from '../post-traversal';
-import { toStatModel } from './utils';
+import { getLocalIndex, refreshLocalIndex } from './local-index';
 
 type TraverseVaultOptions = {
 	vault: Vault;
+	/** Use the incrementally-maintained cache instead of a full walk. Only
+	 * safe for the `fast` realtime-sync tier — see local-index.ts. Defaults to
+	 * false so every existing caller (authoritative syncs, monitor mode)
+	 * keeps doing a full, guaranteed-accurate walk unless it opts in. */
+	useCache?: boolean;
 };
 
-export default async function traverse({ vault }: TraverseVaultOptions) {
+export default async function traverse({ vault, useCache = false }: TraverseVaultOptions) {
 	const { filterRules, skipLargeFiles } = await useSettings();
-	const queue = [vault.getRoot().path];
-	const result: StatsMap = new Map();
+	const result = useCache ? await getLocalIndex(vault) : await refreshLocalIndex(vault);
 
-	while (queue.length > 0) {
-		const currentLevelPaths = queue.splice(0);
-
-		await Promise.all(
-			currentLevelPaths.map(async (currentPath) => {
-				try {
-					const resultItems = await vault.adapter.list(currentPath);
-
-					await Promise.all(
-						[...resultItems.files, ...resultItems.folders].map(async (_path) => {
-							const stat = await vault.adapter.stat(_path);
-							if (!stat) throw new Error(`Stat of ${_path} not found!`);
-							const path = normalizeVaultPath(_path);
-							const processedStat = toStatModel(stat, path);
-							result.set(path, processedStat);
-						}),
-					);
-					queue.push(...resultItems.folders);
-				} catch (error) {
-					logger.error(`Error processing ${currentPath}`, error);
-					throw error;
-				}
-			}),
-		);
-	}
 	return postTraversal(
 		result,
 		filterRules,

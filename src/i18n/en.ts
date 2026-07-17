@@ -236,6 +236,7 @@ const en = {
 			removeLocalRecursively: 'Remove local recursively',
 			removeRemote: 'Remove remote',
 			removeRemoteRecursively: 'Remove remote recursively',
+			renameRemote: 'Rename remote',
 			sync: 'Sync',
 			upload: 'Upload',
 		},

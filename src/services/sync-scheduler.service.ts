@@ -3,6 +3,7 @@ import type WebDAVSyncPlugin from '~';
 import { Platform } from 'obsidian';
 import type { SyncTrigger } from '~/events';
 import { syncRun } from '~/events';
+import { noteLocalCreateOrModify, noteLocalDelete, noteLocalRename } from '~/fs/vault/local-index';
 import { SyncRunKind } from '~/types';
 import { buildRules, needIncludeFromGlobRules } from '~/utils/glob-match';
 import waitUntil from '~/utils/wait-until';
@@ -91,6 +92,29 @@ export default class SyncSchedulerService {
 			this.plugin.registerEvent(this.plugin.app.vault.on('delete', this.onChange));
 			this.plugin.registerEvent(this.plugin.app.vault.on('modify', this.onChange));
 			this.plugin.registerEvent(this.plugin.app.vault.on('rename', this.onChange));
+
+			/* Keep the local-index cache (fs/vault/local-index.ts) warm, independent
+			 * of whether realtime sync is even enabled — it's also read by any
+			 * `fast` run, and staying warm here means the first fast sync after a
+			 * normal one doesn't eat a full walk just to catch up on one edit. */
+			this.plugin.registerEvent(
+				this.plugin.app.vault.on('create', (file) =>
+					void noteLocalCreateOrModify(this.plugin.app.vault, file.path),
+				),
+			);
+			this.plugin.registerEvent(
+				this.plugin.app.vault.on('modify', (file) =>
+					void noteLocalCreateOrModify(this.plugin.app.vault, file.path),
+				),
+			);
+			this.plugin.registerEvent(
+				this.plugin.app.vault.on('delete', (file) => noteLocalDelete(file.path)),
+			);
+			this.plugin.registerEvent(
+				this.plugin.app.vault.on('rename', (file, oldPath) =>
+					void noteLocalRename(this.plugin.app.vault, oldPath, file.path),
+				),
+			);
 
 			// Run the startup sync / initial check only once the workspace is ready.
 			// On mobile the vault/credential store may not be ready at onload, so a

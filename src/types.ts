@@ -11,6 +11,15 @@ export type FileStatModel = {
 	 * far stronger change signal than mtime, which is unreliable across devices.
 	 */
 	etag?: string;
+	/**
+	 * Content hash (local side only), stored whenever a task already has the
+	 * file's bytes in hand. Lets a later push confirm whether a file flagged
+	 * "changed" by mtime/size actually has different content — see
+	 * push.task.ts. Not computed during traversal (would mean hashing the
+	 * whole vault every sync), so it is a confirmation signal, not a
+	 * replacement for the mtime/size check.
+	 */
+	hash?: string;
 };
 
 export type FolderStatModel = {

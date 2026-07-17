@@ -235,7 +235,10 @@ export default function twoWayDecider(input: SyncDecisionInput): Array<BaseTask>
 				logger.debug(`Push local file \`${localPath}\` changes to remote`, {
 					reason: 'local file changed',
 				});
-				tasks.push(taskFactory.createPushTask({ ...options, local }));
+				// Passing `remote` here (unchanged per remoteChanged === false) lets
+				// PushTask confirm via content hash whether "local changed" was a
+				// real edit or a false positive from mtime/size alone.
+				tasks.push(taskFactory.createPushTask({ ...options, local, remote }));
 			},
 			RECORD_REMOTE_NOLOCAL_PULL: () => {
 				if (!remote) return;

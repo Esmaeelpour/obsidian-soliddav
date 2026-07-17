@@ -236,6 +236,7 @@ const translation: typeof en = {
 			removeLocalRecursively: '递归删除本地',
 			removeRemote: '删除远程',
 			removeRemoteRecursively: '递归删除远程',
+			renameRemote: '重命名远程',
 			sync: '同步',
 			upload: '上传',
 		},

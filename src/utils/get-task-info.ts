@@ -30,6 +30,9 @@ export function getTaskIcon(taskName: TaskNames): string {
 		case 'removeRemoteRecursively': {
 			return 'archive-x';
 		}
+		case 'renameRemote': {
+			return 'move';
+		}
 		default: {
 			return 'refresh-cw';
 		}

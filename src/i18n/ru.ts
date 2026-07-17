@@ -238,6 +238,7 @@ const translation: typeof en = {
 			removeLocalRecursively: 'Удалить локально рекурсивно',
 			removeRemote: 'Удалить удаленно',
 			removeRemoteRecursively: 'Удалить удаленно рекурсивно',
+			renameRemote: 'Переименовать удаленно',
 			sync: 'Синхронизировать',
 			upload: 'Загрузить',
 		},

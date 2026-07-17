@@ -1,4 +1,4 @@
-import type { StatsMap } from '~/types';
+import type { RecordStatsMap, StatsMap } from '~/types';
 import apiLimiter from '~/composable/api-limiter';
 import { normalizePathToRelative, normalizeRemotePath } from '~/platform/path';
 import { useSettings } from '~/settings';
@@ -11,11 +11,18 @@ import sleep from '~/utils/sleep';
 import type { TraversalProgress } from '../fs.interface';
 import postTraversal from '../post-traversal';
 import { getDirectoryContents } from './api';
+import { trySyncCollection } from './sync-collection';
 
 type TraverseWebDAVOptions = {
 	onProgress?: (progress: TraversalProgress) => void;
 	throwIfCancelled?: () => void;
 	token: string;
+	/** Previously-known remote records. When present (and encryption is off),
+	 * used to attempt an RFC 6578 sync-collection delta instead of a full
+	 * PROPFIND walk — see sync-collection.ts. Optional and purely additive:
+	 * omitting it, or the server not supporting it, always falls back to the
+	 * exact walk this function has always done. */
+	records?: RecordStatsMap;
 };
 
 function isNotFoundError(err: unknown): boolean {
@@ -29,12 +36,48 @@ export default async function traverse({
 	onProgress,
 	token,
 	throwIfCancelled,
+	records,
 }: TraverseWebDAVOptions) {
 	const { filterRules, skipLargeFiles, serverUrl, remoteDir, exhaustiveRemoteTraversal } =
 		await useSettings();
 	const encrypted = (await useSettings()).encryption.enabled;
 	const result: StatsMap = new Map();
 	const baseDirNormalized = normalizeRemotePath(remoteDir);
+
+	// Encrypted vaults store obfuscated paths server-side; reconstructing an
+	// accurate base from records for the delta merge below has more edge cases
+	// than this feature is worth risking there, so it's skipped entirely —
+	// encrypted vaults always get the full, unambiguous walk.
+	if (records && !encrypted) {
+		const delta = await trySyncCollection(serverUrl, token, remoteDir);
+		if (delta.supported) {
+			for (const [vaultPath, record] of records) result.set(vaultPath, record.remote);
+
+			for (const change of delta.changes) {
+				const vaultPath = normalizePathToRelative(remoteDir, change.path);
+				if (!change.stat) {
+					result.delete(vaultPath);
+					// A removed folder is reported as one entry, not per-descendant
+					// (RFC 6578 §3.8) — drop anything the base thought lived under it.
+					const prefix = `${vaultPath}/`;
+					for (const key of [...result.keys()]) if (key.startsWith(prefix)) result.delete(key);
+					continue;
+				}
+				result.set(vaultPath, change.stat);
+			}
+
+			onProgress?.({
+				currentDirectory: remoteDir,
+				processedDirectories: result.size,
+				totalDirectories: result.size,
+			});
+			return postTraversal(
+				result,
+				filterRules,
+				skipLargeFiles.enabled ? skipLargeFiles.value : undefined,
+			);
+		}
+	}
 
 	const getContentFunc = (path: string) =>
 		apiLimiter.wrap(getDirectoryContents)(serverUrl, token, path, exhaustiveRemoteTraversal);

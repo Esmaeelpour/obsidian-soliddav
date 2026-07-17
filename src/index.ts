@@ -2,8 +2,10 @@ import './global.css';
 import { Plugin } from 'obsidian';
 import type { PluginSettings, GlobMatchOptions } from './settings';
 import type { SyncEncryptionContext } from './utils/encryption';
+import applyConcurrencySettings from './composable/apply-concurrency-settings';
 import SyncRibbonManager from './components/SyncRibbonManager';
 import { syncCancel } from './events';
+import { invalidateLocalIndex } from './fs/vault/local-index';
 import { normalizeBaseDir } from './platform/path';
 import setupCommands from './services/command.setup';
 import ObservabilityService from './services/observability.service';
@@ -126,6 +128,11 @@ export default class WebDAVSyncPlugin extends Plugin {
 
 	async onload() {
 		Object.assign(this.settings, await this.loadData());
+		// The apiLimiter previously only picked up maxWebDAVConcurrency /
+		// minWebDAVRequestInterval when a user happened to edit those fields in
+		// the Settings tab — so concurrency was silently unbounded until then.
+		// Apply the saved (or default) values immediately on load.
+		applyConcurrencySettings(this.settings);
 		await this.syncStateStore.initialize();
 		await this.baseTextStore.initialize();
 		await this.fileChunkStore.initialize();
@@ -146,6 +153,7 @@ export default class WebDAVSyncPlugin extends Plugin {
 		this.observabilityService.unload();
 		syncCancel();
 		this.syncSchedulerService.unload();
+		invalidateLocalIndex();
 	}
 
 	saveSettings = async () => await this.saveData(this.settings);

@@ -79,6 +79,10 @@ export default class SyncRecord {
 		return await this.stateStore.getAll(this.namespace);
 	}
 
+	async getRecord(path: string) {
+		return await this.stateStore.get(this.namespace, path);
+	}
+
 	async drop() {
 		await this.stateStore.removeNamespace(this.namespace);
 		await this.textStore.removeNamespace(this.namespace);

@@ -8,6 +8,7 @@ import {
 import { getContent } from '~/fs/webdav';
 import { arrayBufferToText, toArrayBuffer } from '~/platform/binary';
 import { useSettings } from '~/settings';
+import hashContent from '~/utils/content-hash';
 import {
 	createRemoteFileContentRangedDecrypter,
 	decryptRemoteFileContent,
@@ -111,13 +112,16 @@ export default class PullTask extends BaseTask<OptionsWithRemoteFileStat> {
 			const local = await statItem(this.vault, this.localPath);
 			if (!local || local.isDir)
 				throw new Error(`failed to read local file stat after pull: ${this.localPath}`);
+			const mergeable = isMergeablePath(this.localPath);
+			// Local now has exactly this content, so its hash is `remoteContent`'s
+			// hash. Only computed for whole-buffer (non-chunked) downloads — chunked
+			// large-file downloads never hold the full content in memory by design,
+			// and re-reading the file just to hash it would defeat that.
+			const hash = !mergeable && remoteContent ? await hashContent(remoteContent) : undefined;
 			await this.syncRecord.upsertRecords({
-				baseText:
-					isMergeablePath(this.localPath) && remoteContent
-						? await arrayBufferToText(remoteContent)
-						: undefined,
+				baseText: mergeable && remoteContent ? await arrayBufferToText(remoteContent) : undefined,
 				key: this.localPath,
-				local,
+				local: { ...local, hash },
 				remote: this.remote,
 			});
 

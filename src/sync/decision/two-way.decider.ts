@@ -30,6 +30,7 @@ import PullTask from '../tasks/pull.task';
 import PushTask from '../tasks/push.task';
 import RemoveLocalTask from '../tasks/remove-local.task';
 import RemoveRemoteTask from '../tasks/remove-remote.task';
+import detectRenames from '../utils/detect-renames';
 import twoWayDecider from './two-way.decider.function';
 
 export default class TwoWaySyncDecider {
@@ -59,7 +60,14 @@ export default class TwoWaySyncDecider {
 
 		const records = await this.syncRecordStorage.getRecords();
 
-		const currentLocalStats = await traverseVault({ vault: this.vault });
+		// Fast realtime syncs skip the full local walk too (mirroring the
+		// remote-side skip below) — they're the keystroke-triggered hot path, and
+		// the cache is kept warm by vault events + refreshed by every
+		// authoritative sync, so this is safe. See fs/vault/local-index.ts.
+		const currentLocalStats = await traverseVault({
+			useCache: this.sync.runKind === SyncRunKind.fast,
+			vault: this.vault,
+		});
 
 		onProgress({
 			remoteWalkSummary: {
@@ -82,6 +90,7 @@ export default class TwoWaySyncDecider {
 								},
 								stage: 'walking_remote',
 							}),
+						records,
 						throwIfCancelled: options?.throwIfCancelled,
 						token: this.token,
 					});
@@ -126,7 +135,8 @@ export default class TwoWaySyncDecider {
 			taskFactory,
 		};
 
-		return twoWayDecider(decisionInput);
+		const tasks = twoWayDecider(decisionInput);
+		return detectRenames(tasks, records, this.vault);
 	}
 }
 
