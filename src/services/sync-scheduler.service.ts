@@ -75,6 +75,13 @@ export default class SyncSchedulerService {
 		if (Platform.isMobile)
 			this.plugin.registerDomEvent(document, 'visibilitychange', () => {
 				if (document.visibilityState !== 'visible') return;
+
+				// Opening the system browser for a Nextcloud login can suspend or
+				// reload the WebView, dropping the in-memory poll the Settings tab
+				// was awaiting. Cheap (one no-op localStorage read) when nothing is
+				// pending, so it's fine to check on every resume.
+				void this.plugin.checkPendingNextcloudLogin();
+
 				const { realtimeSync, scheduledSync, startupSync, operatingMode } = this.settings;
 				const autoSyncEnabled =
 					realtimeSync.enabled ||

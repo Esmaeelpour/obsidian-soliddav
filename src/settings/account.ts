@@ -4,7 +4,7 @@ import EncryptionReminderModal from '~/components/EncryptionReminderModal';
 import SelectRemoteBaseDirModal from '~/components/SelectRemoteBaseDirModal';
 import t from '~/i18n';
 import { normalizeBaseDir } from '~/platform/path';
-import { startNextcloudLogin, webdavUrlFromLogin } from '~/services/nextcloud-login';
+import { applyNextcloudLogin, startNextcloudLogin } from '~/services/nextcloud-login';
 import handleInput from '~/utils/handle-input';
 import type { ConnectionType } from '.';
 import BaseSettings from './settings.base';
@@ -276,14 +276,7 @@ export default class AccountSettings extends BaseSettings {
 		try {
 			const handle = await startNextcloudLogin(raw);
 			const login = await handle.result;
-			// The credential is kept in Obsidian's secret storage; settings.token holds
-			// only the id used to look it up (id must be lowercase alphanumeric/dashes).
-			const secretId = 'webdav-sync-credential';
-			this.app.secretStorage.setSecret(secretId, login.appPassword);
-			this.plugin.settings.serverUrl = webdavUrlFromLogin(login).replace(/\/+$/, '');
-			this.plugin.settings.account = login.loginName;
-			this.plugin.settings.token = secretId;
-			await this.plugin.saveSettings();
+			await applyNextcloudLogin(this.app, this.plugin, login);
 			new Notice(`Logged in to Nextcloud as ${login.loginName}.`);
 			this.display();
 		} catch (error) {

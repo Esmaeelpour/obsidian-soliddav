@@ -1,5 +1,5 @@
 import './global.css';
-import { Plugin } from 'obsidian';
+import { Notice, Plugin } from 'obsidian';
 import type { PluginSettings, GlobMatchOptions } from './settings';
 import type { SyncEncryptionContext } from './utils/encryption';
 import applyConcurrencySettings from './composable/apply-concurrency-settings';
@@ -8,6 +8,7 @@ import { syncCancel } from './events';
 import { invalidateLocalIndex } from './fs/vault/local-index';
 import { normalizeBaseDir } from './platform/path';
 import setupCommands from './services/command.setup';
+import { applyNextcloudLogin, resumePendingNextcloudLogin } from './services/nextcloud-login';
 import ObservabilityService from './services/observability.service';
 import SyncExecutorService from './services/sync-executor.service';
 import SyncSchedulerService from './services/sync-scheduler.service';
@@ -141,6 +142,22 @@ export default class WebDAVSyncPlugin extends Plugin {
 		setupCommands(this);
 		this.syncSchedulerService.start();
 		patchWebDav();
+		void this.checkPendingNextcloudLogin();
+	}
+
+	/**
+	 * On Android, opening the system browser for the Nextcloud login can
+	 * suspend or fully reload Obsidian's WebView, silently killing the
+	 * in-memory poll loop the Settings tab was awaiting — the login completes
+	 * on Nextcloud's side, but the app never finds out and looks like nothing
+	 * happened. Recover it here (also checked on mobile app-resume — see
+	 * SyncSchedulerService) using the state startNextcloudLogin persisted.
+	 */
+	async checkPendingNextcloudLogin() {
+		const login = await resumePendingNextcloudLogin();
+		if (!login) return;
+		await applyNextcloudLogin(this.app, this, login);
+		new Notice(`Logged in to Nextcloud as ${login.loginName}.`);
 	}
 
 	onunload() {
