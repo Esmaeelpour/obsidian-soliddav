@@ -86,13 +86,11 @@ export function noteLocalDelete(path: string): void {
 	if (!cache) return;
 	const normalized = normalizeVaultPath(path);
 	const prefix = `${normalized}/`;
-	// A folder delete cascades to its descendants; if any cached entry lives
-	// under this path, invalidate wholesale rather than leaving them orphaned
-	// (we have no stat left to tell file from folder once it's gone).
-	const hadDescendants = [...cache.keys()].some((key) => key.startsWith(prefix));
-	if (hadDescendants) {
-		invalidateLocalIndex();
-		return;
+	
+	for (const key of cache.keys()) {
+		if (key.startsWith(prefix)) {
+			cache.delete(key);
+		}
 	}
 	cache.delete(normalized);
 }

@@ -154,7 +154,7 @@ export default class WebDAVSyncPlugin extends Plugin {
 	 * SyncSchedulerService) using the state startNextcloudLogin persisted.
 	 */
 	async checkPendingNextcloudLogin() {
-		const login = await resumePendingNextcloudLogin();
+		const login = await resumePendingNextcloudLogin(this.app);
 		if (!login) return;
 		await applyNextcloudLogin(this.app, this, login);
 		new Notice(`Logged in to Nextcloud as ${login.loginName}.`);

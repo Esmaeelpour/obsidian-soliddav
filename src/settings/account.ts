@@ -274,7 +274,7 @@ export default class AccountSettings extends BaseSettings {
 		button.setDisabled(true);
 		button.setButtonText('Waiting for browser…');
 		try {
-			const handle = await startNextcloudLogin(raw);
+			const handle = await startNextcloudLogin(this.app, raw);
 			const login = await handle.result;
 			await applyNextcloudLogin(this.app, this.plugin, login);
 			new Notice(`Logged in to Nextcloud as ${login.loginName}.`);

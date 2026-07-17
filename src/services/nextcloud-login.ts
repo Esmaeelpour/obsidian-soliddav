@@ -58,7 +58,13 @@ type PendingLogin = {
 	deadline: number;
 };
 
-const PENDING_LOGIN_KEY = 'soliddav-pending-nextcloud-login';
+let isNextcloudLoginPolling = false;
+
+function getPendingLoginKey(app: App): string {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+	const id = (app as any).appId || app.vault.getName();
+	return `soliddav-pending-nextcloud-login-${id}`;
+}
 
 /**
  * Persisted alongside the in-memory polling loop below (not instead of it):
@@ -69,17 +75,17 @@ const PENDING_LOGIN_KEY = 'soliddav-pending-nextcloud-login';
  * resume the poll (see resumePendingNextcloudLogin) means returning to the
  * app can always pick the flow back up, even after a full reload.
  */
-function persistPendingLogin(state: PendingLogin): void {
+function persistPendingLogin(app: App, state: PendingLogin): void {
 	try {
-		localStorage.setItem(PENDING_LOGIN_KEY, JSON.stringify(state));
+		localStorage.setItem(getPendingLoginKey(app), JSON.stringify(state));
 	} catch {
 		/* best-effort */
 	}
 }
 
-function readPendingLogin(): PendingLogin | undefined {
+function readPendingLogin(app: App): PendingLogin | undefined {
 	try {
-		const raw = localStorage.getItem(PENDING_LOGIN_KEY);
+		const raw = localStorage.getItem(getPendingLoginKey(app));
 		if (!raw) return undefined;
 		const parsed = JSON.parse(raw) as Partial<PendingLogin>;
 		if (
@@ -94,9 +100,9 @@ function readPendingLogin(): PendingLogin | undefined {
 	}
 }
 
-export function clearPendingNextcloudLogin(): void {
+export function clearPendingNextcloudLogin(app: App): void {
 	try {
-		localStorage.removeItem(PENDING_LOGIN_KEY);
+		localStorage.removeItem(getPendingLoginKey(app));
 	} catch {
 		/* ignore */
 	}
@@ -131,17 +137,18 @@ async function pollOnce(
  * returns to the foreground on mobile — it's a single cheap request when
  * nothing is pending, so it's safe to call opportunistically and often.
  */
-export async function resumePendingNextcloudLogin(): Promise<NextcloudLoginResult | undefined> {
-	const pending = readPendingLogin();
+export async function resumePendingNextcloudLogin(app: App): Promise<NextcloudLoginResult | undefined> {
+	if (isNextcloudLoginPolling) return undefined;
+	const pending = readPendingLogin(app);
 	if (!pending) return undefined;
 	if (Date.now() > pending.deadline) {
-		clearPendingNextcloudLogin();
+		clearPendingNextcloudLogin(app);
 		return undefined;
 	}
 	try {
 		const outcome = await pollOnce(pending.pollEndpoint, pending.token);
 		if (outcome.status === 'pending') return undefined;
-		clearPendingNextcloudLogin();
+		clearPendingNextcloudLogin(app);
 		return outcome.data;
 	} catch {
 		// Leave it persisted — a transient network error shouldn't drop a login
@@ -154,7 +161,7 @@ export async function resumePendingNextcloudLogin(): Promise<NextcloudLoginResul
  * Start the flow against a Nextcloud base URL (scheme+host derived from the URL
  * the user typed). Opens the browser and polls until access is granted.
  */
-export async function startNextcloudLogin(rawBaseUrl: string): Promise<LoginFlowHandle> {
+export async function startNextcloudLogin(app: App, rawBaseUrl: string): Promise<LoginFlowHandle> {
 	// Tolerate a missing scheme (e.g. "cloud.example.com").
 	const withScheme = /^https?:\/\//i.test(rawBaseUrl.trim())
 		? rawBaseUrl.trim()
@@ -178,12 +185,13 @@ export async function startNextcloudLogin(rawBaseUrl: string): Promise<LoginFlow
 	const token = init.poll.token;
 	const deadline = Date.now() + 10 * 60 * 1000; // 10 minutes
 
-	persistPendingLogin({ deadline, pollEndpoint, token });
+	persistPendingLogin(app, { deadline, pollEndpoint, token });
 
 	// Open the browser for the user to authenticate + grant access.
 	window.open(loginUrl, '_blank');
 
 	let cancelled = false;
+	isNextcloudLoginPolling = true;
 	const result = (async (): Promise<NextcloudLoginResult> => {
 		try {
 			while (Date.now() < deadline) {
@@ -195,14 +203,16 @@ export async function startNextcloudLogin(rawBaseUrl: string): Promise<LoginFlow
 			}
 			throw new Error('Login timed out. Please try again.');
 		} finally {
-			clearPendingNextcloudLogin();
+			isNextcloudLoginPolling = false;
+			clearPendingNextcloudLogin(app);
 		}
 	})();
 
 	return {
 		cancel: () => {
 			cancelled = true;
-			clearPendingNextcloudLogin();
+			isNextcloudLoginPolling = false;
+			clearPendingNextcloudLogin(app);
 		},
 		loginUrl,
 		result,

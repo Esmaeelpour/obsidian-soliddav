@@ -43,19 +43,25 @@ export default async function detectRenames(
 	const syncRecord: SyncRecord = removeCandidates[0].options.syncRecord;
 
 	const removeKeyed: Array<Keyed<RemoveRemoteTask>> = [];
+	const removeSizes = new Set<number>();
 	for (const task of removeCandidates) {
 		const record = records.get(task.localPath);
 		if (!record || record.local.isDir || record.remote.isDir) continue;
 		const key = isMergeablePath(task.localPath)
 			? await syncRecord.getBaseText(task.localPath)
 			: record.local.hash;
-		if (key !== undefined) removeKeyed.push({ key: `${isMergeablePath(task.localPath)}:${key}`, task });
+		if (key !== undefined) {
+			removeKeyed.push({ key: `${isMergeablePath(task.localPath)}:${key}`, task });
+			removeSizes.add(record.remote.size);
+		}
 	}
 	if (removeKeyed.length === 0) return tasks;
 
 	const pushKeyed: Array<Keyed<PushTask>> = [];
 	for (const task of pushCandidates) {
 		if (!task.local || task.local.isDir) continue;
+		if (!removeSizes.has(task.local.size)) continue;
+
 		try {
 			const content = await getContent(vault, task.localPath);
 			const key = isMergeablePath(task.localPath)

@@ -131,68 +131,69 @@ export default async function traverse({
 		const pruneExcludedDirs = (filterRules.inclusionRules?.length ?? 0) === 0;
 
 		let processedCount = 0;
-		const queue = [remoteDir];
+		let pendingCount = 1;
+		let hasError = false;
+
 		const reportProgress = (current: string) => {
 			throwIfCancelled?.();
 			processedCount++;
+			pendingCount--;
 			onProgress?.({
 				currentDirectory: current,
 				processedDirectories: processedCount,
-				totalDirectories: processedCount + queue.length,
+				totalDirectories: processedCount + pendingCount,
 			});
 		};
 
-		while (queue.length > 0) {
-			const currentLevelPaths = queue.splice(0);
+		await new Promise<void>((resolve, reject) => {
+			const processDirectory = async (currentPath: string) => {
+				if (hasError) return;
+				try {
+					const resultItems = await Promise.all(
+						(await getContent(currentPath)).map(async (stat) => {
+							const listingPath = stat.path;
+							if (encrypted) stat.path = await decryptRemotePathForTraversal(listingPath);
+							return { listingPath, statModel: stat };
+						}),
+					);
 
-			await Promise.all(
-				currentLevelPaths.map(async (currentPath) => {
-					try {
-						const resultItems = await Promise.all(
-							(await getContent(currentPath)).map(async (stat) => {
-								const listingPath = stat.path;
-								if (encrypted)
-									stat.path = await decryptRemotePathForTraversal(listingPath);
-								return { listingPath, statModel: stat };
-							}),
-						);
-
-						for (const item of resultItems) {
-							const vaultPath = normalizePathToRelative(
-								remoteDir,
-								item.statModel.path,
-							);
-							result.set(vaultPath, item.statModel);
-							if (item.statModel.isDir) {
-								if (
-									pruneExcludedDirs &&
-									vaultPath.length > 0 &&
-									!needIncludeFromGlobRules(vaultPath, inclusions, exclusions)
-								)
-									continue;
-								queue.push(item.listingPath);
-							}
+					for (const item of resultItems) {
+						const vaultPath = normalizePathToRelative(remoteDir, item.statModel.path);
+						result.set(vaultPath, item.statModel);
+						if (item.statModel.isDir) {
+							if (
+								pruneExcludedDirs &&
+								vaultPath.length > 0 &&
+								!needIncludeFromGlobRules(vaultPath, inclusions, exclusions)
+							)
+								continue;
+							
+							pendingCount++;
+							void processDirectory(item.listingPath);
 						}
-						reportProgress(currentPath);
-					} catch (error) {
-						logger.error(`Error processing ${currentPath}`, error);
-						if (isNotFoundError(error)) {
-							/* A 404 on the configured sync root means the remote folder
-							 * doesn't exist (wrong path/case). Surface it — swallowing it
-							 * would leave the remote listing empty, so monitor mode would
-							 * report a misleading "Pending" and a full sync would try to
-							 * push the whole vault. A 404 on a descendant is tolerated: it
-							 * was likely deleted mid-walk. */
-							if (normalizeRemotePath(currentPath) === baseDirNormalized)
-								throw new RemoteBaseDirNotFoundError(remoteDir);
-							reportProgress(currentPath);
+					}
+					reportProgress(currentPath);
+				} catch (error) {
+					if (hasError) return;
+					logger.error(`Error processing ${currentPath}`, error);
+					if (isNotFoundError(error)) {
+						if (normalizeRemotePath(currentPath) === baseDirNormalized) {
+							hasError = true;
+							reject(new RemoteBaseDirNotFoundError(remoteDir));
 							return;
 						}
-						throw error;
+						reportProgress(currentPath);
+					} else {
+						hasError = true;
+						reject(error);
 					}
-				}),
-			);
-		}
+				} finally {
+					if (pendingCount === 0 && !hasError) resolve();
+				}
+			};
+
+			void processDirectory(remoteDir);
+		});
 	}
 
 	return postTraversal(
