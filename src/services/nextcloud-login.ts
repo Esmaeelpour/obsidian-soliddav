@@ -1,6 +1,7 @@
 import type { App } from 'obsidian';
 import { requestUrl } from 'obsidian';
 import type WebDAVSyncPlugin from '~';
+import logger from '~/utils/logger';
 
 /**
  * Nextcloud "Login Flow v2" — the same browser-grant flow the official Nextcloud
@@ -58,7 +59,11 @@ type PendingLogin = {
 	deadline: number;
 };
 
-let isNextcloudLoginPolling = false;
+/** Thrown by the in-memory loop when another path (the resume check or the
+ * manual "complete login" button) already consumed the one-shot poll token.
+ * runNextcloudLogin treats it as a non-error so no spurious "timed out"
+ * notice appears after a login that actually succeeded elsewhere. */
+export const LOGIN_COMPLETED_ELSEWHERE = '__nextcloud_login_completed_elsewhere__';
 
 function getPendingLoginKey(app: App): string {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
@@ -130,31 +135,61 @@ async function pollOnce(
 	return { status: 'pending' };
 }
 
-/**
- * Checks for a login flow left pending by a previous app session (see the
- * class comment on persistPendingLogin) and, if Nextcloud has since recorded
- * the grant, returns it. Call this on plugin load and whenever the app
- * returns to the foreground on mobile — it's a single cheap request when
- * nothing is pending, so it's safe to call opportunistically and often.
- */
-export async function resumePendingNextcloudLogin(app: App): Promise<NextcloudLoginResult | undefined> {
-	if (isNextcloudLoginPolling) return undefined;
+/** Whether a login started in this or a previous session is still awaiting the
+ * user's browser grant. Drives the manual "complete login" affordance in the
+ * settings UI. Expires stale entries as a side effect. */
+export function hasPendingNextcloudLogin(app: App): boolean {
 	const pending = readPendingLogin(app);
-	if (!pending) return undefined;
+	if (!pending) return false;
 	if (Date.now() > pending.deadline) {
 		clearPendingNextcloudLogin(app);
-		return undefined;
+		return false;
+	}
+	return true;
+}
+
+export type CompleteLoginOutcome =
+	| { status: 'none' }
+	| { status: 'pending' }
+	| { status: 'done'; login: NextcloudLoginResult }
+	| { status: 'error'; message: string };
+
+/**
+ * Polls the pending login exactly once and reports the outcome. This is the
+ * single, deterministic completion path — it does NOT depend on the in-memory
+ * loop, background timers, or lifecycle events surviving (all unreliable on
+ * mobile, where opening the browser can freeze or reload the WebView). Called
+ * both automatically (plugin load / app-resume) and manually (the settings
+ * "complete login" button), and surfaces real errors instead of swallowing
+ * them so a failing sign-in is diagnosable.
+ */
+export async function completePendingNextcloudLoginNow(app: App): Promise<CompleteLoginOutcome> {
+	const pending = readPendingLogin(app);
+	if (!pending) return { status: 'none' };
+	if (Date.now() > pending.deadline) {
+		clearPendingNextcloudLogin(app);
+		return { status: 'none' };
 	}
 	try {
 		const outcome = await pollOnce(pending.pollEndpoint, pending.token);
-		if (outcome.status === 'pending') return undefined;
+		if (outcome.status === 'pending') return { status: 'pending' };
 		clearPendingNextcloudLogin(app);
-		return outcome.data;
-	} catch {
-		// Leave it persisted — a transient network error shouldn't drop a login
-		// the user is actively waiting on; it'll be retried on the next check.
-		return undefined;
+		return { login: outcome.data, status: 'done' };
+	} catch (error) {
+		return { message: (error as Error).message, status: 'error' };
 	}
+}
+
+/**
+ * Checks for a login flow left pending by a previous app session (see the
+ * comment on persistPendingLogin) and, if Nextcloud has since recorded the
+ * grant, returns it. Called on plugin load and on every mobile app-resume —
+ * a cheap no-op when nothing is pending, so it's safe to call often. Silent
+ * (returns undefined) unless a grant is actually ready.
+ */
+export async function resumePendingNextcloudLogin(app: App): Promise<NextcloudLoginResult | undefined> {
+	const outcome = await completePendingNextcloudLoginNow(app);
+	return outcome.status === 'done' ? outcome.login : undefined;
 }
 
 /**
@@ -191,27 +226,36 @@ export async function startNextcloudLogin(app: App, rawBaseUrl: string): Promise
 	window.open(loginUrl, '_blank');
 
 	let cancelled = false;
-	isNextcloudLoginPolling = true;
 	const result = (async (): Promise<NextcloudLoginResult> => {
-		try {
-			while (Date.now() < deadline) {
-				if (cancelled) throw new Error('Login cancelled.');
-				await sleep(3000);
-				if (cancelled) throw new Error('Login cancelled.');
+		while (Date.now() < deadline) {
+			if (cancelled) throw new Error('Login cancelled.');
+			await sleep(3000);
+			if (cancelled) throw new Error('Login cancelled.');
+
+			// Another path (resume check or the manual button) may have already
+			// consumed the one-shot token and cleared the pending state — stop
+			// quietly rather than looping to a spurious "timed out" error.
+			if (!readPendingLogin(app)) throw new Error(LOGIN_COMPLETED_ELSEWHERE);
+
+			try {
 				const outcome = await pollOnce(pollEndpoint, token);
-				if (outcome.status === 'done') return outcome.data;
+				if (outcome.status === 'done') {
+					clearPendingNextcloudLogin(app);
+					return outcome.data;
+				}
+			} catch (error) {
+				// A transient network blip mid-poll shouldn't abort the whole login
+				// (mobile connections drop constantly) — keep polling until the
+				// deadline; the manual button is the user's escape hatch otherwise.
+				logger.warn('Nextcloud login poll failed, will retry', error);
 			}
-			throw new Error('Login timed out. Please try again.');
-		} finally {
-			isNextcloudLoginPolling = false;
-			clearPendingNextcloudLogin(app);
 		}
+		throw new Error('Login timed out. Please try again.');
 	})();
 
 	return {
 		cancel: () => {
 			cancelled = true;
-			isNextcloudLoginPolling = false;
 			clearPendingNextcloudLogin(app);
 		},
 		loginUrl,

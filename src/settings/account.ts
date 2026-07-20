@@ -4,7 +4,13 @@ import EncryptionReminderModal from '~/components/EncryptionReminderModal';
 import SelectRemoteBaseDirModal from '~/components/SelectRemoteBaseDirModal';
 import t from '~/i18n';
 import { normalizeBaseDir } from '~/platform/path';
-import { applyNextcloudLogin, startNextcloudLogin } from '~/services/nextcloud-login';
+import {
+	applyNextcloudLogin,
+	completePendingNextcloudLoginNow,
+	hasPendingNextcloudLogin,
+	LOGIN_COMPLETED_ELSEWHERE,
+	startNextcloudLogin,
+} from '~/services/nextcloud-login';
 import handleInput from '~/utils/handle-input';
 import type { ConnectionType } from '.';
 import BaseSettings from './settings.base';
@@ -264,6 +270,59 @@ export default class AccountSettings extends BaseSettings {
 						),
 					),
 			);
+
+		// If a login is mid-flow (browser opened, waiting on the grant), offer a
+		// deterministic, user-triggered way to finish it. On mobile the browser
+		// can freeze/reload the app's WebView, so the automatic completion can't
+		// be relied on — this button always works because it just re-polls the
+		// stored token on demand and shows the real result.
+		if (hasPendingNextcloudLogin(this.app))
+			new Setting(el)
+				.setName('Finish Nextcloud login')
+				.setDesc(
+					'Already approved access in your browser? Tap to complete sign-in. ' +
+						'If it says approval isn’t recorded yet, approve in the browser first, ' +
+						'then tap again.',
+				)
+				.addButton((button) =>
+					button
+						.setCta()
+						.setButtonText('I approved it — complete login')
+						.onClick(() => void this.completePendingLogin(button)),
+				);
+	}
+
+	private async completePendingLogin(button: ButtonComponent) {
+		button.setDisabled(true);
+		button.setButtonText('Checking…');
+		const outcome = await completePendingNextcloudLoginNow(this.app);
+		switch (outcome.status) {
+			case 'done': {
+				await applyNextcloudLogin(this.app, this.plugin, outcome.login);
+				new Notice(`Logged in to Nextcloud as ${outcome.login.loginName}.`);
+				this.display();
+				return;
+			}
+			case 'pending': {
+				new Notice(
+					'Nextcloud hasn’t recorded your approval yet. Approve access in the ' +
+						'browser, then tap “Complete login” again.',
+				);
+				button.setDisabled(false);
+				button.setButtonText('I approved it — complete login');
+				return;
+			}
+			case 'error': {
+				new Notice(`Couldn’t complete login: ${outcome.message}`);
+				button.setDisabled(false);
+				button.setButtonText('Try again');
+				return;
+			}
+			case 'none': {
+				new Notice('No login in progress. Start a new Nextcloud login.');
+				this.display();
+			}
+		}
 	}
 
 	private async runNextcloudLogin(raw: string, button: ButtonComponent) {
@@ -273,16 +332,35 @@ export default class AccountSettings extends BaseSettings {
 		}
 		button.setDisabled(true);
 		button.setButtonText('Waiting for browser…');
+		let handle: Awaited<ReturnType<typeof startNextcloudLogin>>;
 		try {
-			const handle = await startNextcloudLogin(this.app, raw);
+			handle = await startNextcloudLogin(this.app, raw);
+		} catch (error) {
+			new Notice(`Nextcloud login failed: ${(error as Error).message}`);
+			button.setDisabled(false);
+			button.setButtonText('Log in with Nextcloud');
+			return;
+		}
+
+		// Re-render now so the manual "Finish Nextcloud login" button appears
+		// immediately — the user's escape hatch if the automatic completion
+		// below never fires (mobile WebView freeze/reload).
+		this.display();
+
+		try {
 			const login = await handle.result;
 			await applyNextcloudLogin(this.app, this.plugin, login);
 			new Notice(`Logged in to Nextcloud as ${login.loginName}.`);
 			this.display();
 		} catch (error) {
+			// Another path (the manual button or app-resume recovery) already
+			// finished this login — not an error, just refresh to the logged-in view.
+			if ((error as Error).message === LOGIN_COMPLETED_ELSEWHERE) {
+				this.display();
+				return;
+			}
 			new Notice(`Nextcloud login failed: ${(error as Error).message}`);
-			button.setDisabled(false);
-			button.setButtonText('Log in with Nextcloud');
+			this.display();
 		}
 	}
 
