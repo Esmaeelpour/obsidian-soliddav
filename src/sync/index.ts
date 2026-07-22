@@ -17,6 +17,7 @@ import t from '~/i18n';
 import { SyncRecord } from '~/storage';
 import { SyncRunKind } from '~/types';
 import breakableSleep from '~/utils/breakable-sleep';
+import { getBackoffDelay } from '~/utils/backoff';
 import { getSyncStateKey } from '~/utils/get-sync-state-key';
 import { getTaskName } from '~/utils/get-task-info';
 import isRetryableError from '~/utils/is-retryable-error';
@@ -520,14 +521,16 @@ export default class SyncEngine {
 			const taskResult = await task.exec();
 			if (!taskResult.success && attempt < MAX_ATTEMPTS && isRetryableError(taskResult.error)) {
 				attempt++;
+				const backoff = getBackoffDelay(attempt, 1000, 8000);
 				logger.warn('Retrying task after transient error', {
 					attempt,
+					backoff,
 					error: taskResult.error,
 					localPath: task.localPath,
 					remotePath: task.remotePath,
 					taskName: getTaskName(task.name),
 				});
-				await breakableSleep(syncCancel, 5000);
+				await breakableSleep(syncCancel, backoff);
 				if (this.isCancelled)
 					return {
 						error: new TaskError(t('sync.cancelled'), task),
@@ -563,11 +566,13 @@ export default class SyncEngine {
 					throw new SyncRetryExhaustedError(undefined, retryError);
 				}
 
+				const backoff = getBackoffDelay(retryCount, 1000, 8000);
 				logger.warn('Retrying WebDAV operation after transient error', {
+					backoff,
 					error: retryError,
 					retryCount,
 				});
-				await breakableSleep(syncCancel, 5000);
+				await breakableSleep(syncCancel, backoff);
 				this.throwIfCancelled();
 			}
 		}

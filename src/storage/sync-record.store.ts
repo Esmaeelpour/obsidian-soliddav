@@ -19,9 +19,9 @@ export default class IndexedDbSyncStateStore extends BaseStore {
 	async getAll(_namespace: string): Promise<RecordStatsMap> {
 		return await this.run('read all records', async () => {
 			const result: RecordStatsMap = new Map();
-			const keys = (await this.store.keys()).filter(
-				(key) => parseKey(key).namespace === _namespace,
-			);
+			const keys = Array.from(await this.getNamespaceKeys(_namespace));
+			if (keys.length === 0) return result;
+
 			(await this.store.getItems<RecordStatModel>(keys))
 				.filter(({ value }) => !isNil(value))
 				.map(({ key, value }) => result.set(parseKey(key).path, value as RecordStatModel));

@@ -8,6 +8,7 @@ import { buildRules, needIncludeFromGlobRules } from '~/utils/glob-match';
 import isRetryableError from '~/utils/is-retryable-error';
 import logger from '~/utils/logger';
 import sleep from '~/utils/sleep';
+import { getBackoffDelay } from '~/utils/backoff';
 import type { TraversalProgress } from '../fs.interface';
 import postTraversal from '../post-traversal';
 import { getDirectoryContents } from './api';
@@ -91,7 +92,7 @@ export default async function traverse({
 				retryCount++;
 				return await getContentFunc(path);
 			} catch (error) {
-				if (isRetryableError(error)) await sleep(5000);
+				if (isRetryableError(error)) await sleep(getBackoffDelay(retryCount, 1000, 8000));
 				else throw error;
 			}
 		}

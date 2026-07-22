@@ -16,6 +16,7 @@ export const STORAGE_NAME = 'obsidian-soliddav';
 export const SYNC_STATE_STORE_NAME = 'sync-state';
 export const BASE_TEXT_STORE_NAME = 'base-text';
 export const FILE_CHUNK_STORE_NAME = 'file-chunk';
+export const KV_STORE_NAME = 'kv-store';
 
 export function parseKey(key: string) {
 	const i = key.indexOf(':');
@@ -27,6 +28,7 @@ export abstract class BaseStore {
 	protected readonly store: LocalSpaceInstance;
 	private initPromise: Promise<void> | undefined;
 	private readonly storeName: string;
+	private readonly namespaceKeysMap = new Map<string, Set<string>>();
 
 	constructor(storeName: string) {
 		this.store = localspace.createInstance({
@@ -50,6 +52,7 @@ export abstract class BaseStore {
 	}
 
 	async unload() {
+		this.namespaceKeysMap.clear();
 		await this.store.destroy();
 	}
 
@@ -63,9 +66,43 @@ export abstract class BaseStore {
 		}
 	}
 
+	protected async getNamespaceKeys(namespace: string): Promise<Set<string>> {
+		if (this.namespaceKeysMap.has(namespace)) {
+			return this.namespaceKeysMap.get(namespace) as Set<string>;
+		}
+
+		const allKeys = await this.store.keys();
+		for (const key of allKeys) {
+			const { namespace: ns } = parseKey(key);
+			if (!ns) continue;
+			let set = this.namespaceKeysMap.get(ns);
+			if (!set) {
+				set = new Set<string>();
+				this.namespaceKeysMap.set(ns, set);
+			}
+			set.add(key);
+		}
+
+		if (!this.namespaceKeysMap.has(namespace)) {
+			this.namespaceKeysMap.set(namespace, new Set<string>());
+		}
+		return this.namespaceKeysMap.get(namespace) as Set<string>;
+	}
+
+	protected trackKey(namespace: string, key: string): void {
+		let set = this.namespaceKeysMap.get(namespace);
+		if (!set) {
+			set = new Set<string>();
+			this.namespaceKeysMap.set(namespace, set);
+		}
+		set.add(key);
+	}
+
 	async removeEntry(namespace: string, path: string): Promise<void> {
 		await this.run('delete record entry', async () => {
-			await this.store.removeItem(this.getKey(namespace, path));
+			const key = this.getKey(namespace, path);
+			this.namespaceKeysMap.get(namespace)?.delete(key);
+			await this.store.removeItem(key);
 		});
 	}
 
@@ -75,6 +112,8 @@ export abstract class BaseStore {
 				const { namespace, path } = parseKey(key);
 				return namespace === _namespace && isSub(_path, path, true);
 			});
+			const nsSet = this.namespaceKeysMap.get(_namespace);
+			for (const key of keys) nsSet?.delete(key);
 			await this.store.removeItems(keys);
 		});
 	}
@@ -84,18 +123,22 @@ export abstract class BaseStore {
 			const keys = (await this.store.keys()).filter(
 				(key) => parseKey(key).namespace === _namespace,
 			);
+			this.namespaceKeysMap.delete(_namespace);
 			await this.store.removeItems(keys);
 		});
 	}
 
 	async removeAll(): Promise<void> {
 		await this.run('clear record', async () => {
+			this.namespaceKeysMap.clear();
 			await this.store.clear();
 		});
 	}
 
 	protected getKey(namespace: string, path: string): string {
-		return `${this.storeName}:${namespace}:${path}`;
+		const key = `${this.storeName}:${namespace}:${path}`;
+		this.trackKey(namespace, key);
+		return key;
 	}
 }
 

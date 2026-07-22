@@ -62,29 +62,44 @@ function serverKey(endpoint: string, remoteDir: string): string {
 	return `${endpoint}::${remoteDir}`;
 }
 
+import kvStore from '~/storage/kv.store';
+
+const syncTokenCache = new Map<string, string>();
+
 function tokenStorageKey(endpoint: string, remoteDir: string): string {
 	return `soliddav-sync-token::${serverKey(endpoint, remoteDir)}`;
 }
 
 export function getStoredSyncToken(endpoint: string, remoteDir: string): string {
+	const key = tokenStorageKey(endpoint, remoteDir);
+	if (syncTokenCache.has(key)) return syncTokenCache.get(key) ?? '';
+
 	try {
-		return localStorage.getItem(tokenStorageKey(endpoint, remoteDir)) ?? '';
+		const val = localStorage.getItem(key) ?? '';
+		if (val) syncTokenCache.set(key, val);
+		return val;
 	} catch {
 		return '';
 	}
 }
 
 function setStoredSyncToken(endpoint: string, remoteDir: string, token: string): void {
+	const key = tokenStorageKey(endpoint, remoteDir);
+	syncTokenCache.set(key, token);
 	try {
-		localStorage.setItem(tokenStorageKey(endpoint, remoteDir), token);
+		localStorage.setItem(key, token);
+		void kvStore.set(key, token);
 	} catch {
 		/* best-effort; a failed write just means the next sync re-derives it */
 	}
 }
 
 export function clearStoredSyncToken(endpoint: string, remoteDir: string): void {
+	const key = tokenStorageKey(endpoint, remoteDir);
+	syncTokenCache.delete(key);
 	try {
-		localStorage.removeItem(tokenStorageKey(endpoint, remoteDir));
+		localStorage.removeItem(key);
+		void kvStore.remove(key);
 	} catch {
 		/* ignore */
 	}

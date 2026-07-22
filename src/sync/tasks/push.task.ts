@@ -40,7 +40,11 @@ export default class PushTask extends BaseTask<OptionsWithLocalFileStat> {
 			const executionRemotePath = await resolveRemoteExecutionPath(this.remotePath);
 			const uploadContent = await encryptContentForRemoteFile(this.localPath, localContent);
 
-			await putFileContentsAtomic(this.webdav, executionRemotePath, uploadContent);
+			const putResult = await putFileContentsAtomic(
+				this.webdav,
+				executionRemotePath,
+				uploadContent,
+			);
 
 			const baseText = isMergeablePath(this.localPath)
 				? await arrayBufferToText(localContent)
@@ -50,30 +54,35 @@ export default class PushTask extends BaseTask<OptionsWithLocalFileStat> {
 			const hash = isMergeablePath(this.localPath) ? undefined : await hashContent(localContent);
 			const local = { ...this.local, hash };
 
-			/* Persist the record immediately after the upload lands, before the extra
-			 * PROPFIND round-trip. If the app is suspended/killed between the upload
-			 * and the record write (common on mobile), the stale record makes the next
-			 * run see a bogus "both sides changed" conflict against our own push and
-			 * decorate the note with merge markers. With this provisional record the
-			 * base text already equals the uploaded content, so the next run resolves
-			 * clean. The synthesized remote stat (no etag) at worst causes one
-			 * harmless self-healing pull of identical content. */
-			const provisionalRemote = {
-				isDir: false as const,
-				mtime: Date.now(),
-				path: this.remotePath,
-				size: uploadContent.byteLength,
-			};
-			await this.syncRecord.upsertRecords({
-				baseText,
-				key: this.localPath,
-				local,
-				remote: provisionalRemote,
-			});
+			let remote;
+			if (putResult?.etag) {
+				remote = {
+					etag: putResult.etag,
+					isDir: false as const,
+					mtime: Date.now(),
+					path: this.remotePath,
+					size: uploadContent.byteLength,
+				};
+			} else {
+				/* Persist provisional record before extra PROPFIND round-trip. */
+				const provisionalRemote = {
+					isDir: false as const,
+					mtime: Date.now(),
+					path: this.remotePath,
+					size: uploadContent.byteLength,
+				};
+				await this.syncRecord.upsertRecords({
+					baseText,
+					key: this.localPath,
+					local,
+					remote: provisionalRemote,
+				});
 
-			const remote = await statItem(executionRemotePath, this.remotePath);
-			if (!remote || remote.isDir)
-				throw new Error(`failed to read remote file stat after push: ${this.localPath}`);
+				const readRemote = await statItem(executionRemotePath, this.remotePath);
+				if (!readRemote || readRemote.isDir)
+					throw new Error(`failed to read remote file stat after push: ${this.localPath}`);
+				remote = readRemote;
+			}
 
 			await this.syncRecord.upsertRecords({
 				baseText,
