@@ -60,11 +60,12 @@ export default class TwoWaySyncDecider {
 
 		const records = await this.syncRecordStorage.getRecords();
 
-		// Fast realtime syncs skip the full local walk too (mirroring the
-		// remote-side skip below) — they're the keystroke-triggered hot path, and
-		// the cache is kept warm by vault events + refreshed by every
-		// authoritative sync, so this is safe. See fs/vault/local-index.ts.
-		const currentLocalStats = await traverseVault({
+		// The local disk walk and the remote network walk are independent, so run
+		// them concurrently — the local walk (disk I/O) then overlaps the remote
+		// walk (network latency) instead of adding to it. Fast realtime syncs skip
+		// the full local walk (cache kept warm by vault events — see
+		// fs/vault/local-index.ts) and the remote walk (records stand in).
+		const localStatsPromise = traverseVault({
 			useCache: this.sync.runKind === SyncRunKind.fast,
 			vault: this.vault,
 		});
@@ -77,10 +78,10 @@ export default class TwoWaySyncDecider {
 			},
 			stage: 'walking_remote',
 		});
-		const currentRemoteStats =
+		const remoteStatsPromise =
 			this.sync.runKind === SyncRunKind.fast
-				? await extractRemoteRecords(records)
-				: await traverseWebDAV({
+				? extractRemoteRecords(records)
+				: traverseWebDAV({
 						onProgress: (progress) =>
 							onProgress({
 								remoteWalkSummary: {
@@ -94,6 +95,11 @@ export default class TwoWaySyncDecider {
 						throwIfCancelled: options?.throwIfCancelled,
 						token: this.token,
 					});
+
+		const [currentLocalStats, currentRemoteStats] = await Promise.all([
+			localStatsPromise,
+			remoteStatsPromise,
+		]);
 
 		const commonTaskOptions = {
 			remoteBaseDir: this.remoteBaseDir,

@@ -58,6 +58,19 @@ const REMOTE_DELETE_TASK_NAMES: ReadonlySet<string> = new Set([
 	'removeRemote',
 	'removeRemoteRecursively',
 ]);
+/** Task names that WRITE to the remote. The advisory lock only exists to stop
+ * two devices' writes from interleaving, so a run whose plan contains none of
+ * these (an idle no-op sync, or a pull-only sync where another device did the
+ * writing) needs no lock at all — skipping it saves ~4 HTTP round-trips, which
+ * on mobile is the bulk of an otherwise-instant sync's wall-clock time. */
+const REMOTE_MUTATING_TASK_NAMES: ReadonlySet<string> = new Set([
+	'upload',
+	'merge',
+	'createRemoteDir',
+	'removeRemote',
+	'removeRemoteRecursively',
+	'renameRemote',
+]);
 
 /** Remote base dirs confirmed to exist this session. Skips one PROPFIND per
  * sync — meaningful on high-latency mobile connections. Cleared for a dir when
@@ -126,14 +139,19 @@ export default class SyncEngine {
 		try {
 			this.runKind = request.runKind;
 
-			/* Take the advisory remote lock so two full syncs don't interleave their
-			 * plans. Fast realtime runs skip it: they only push local edits via
-			 * atomic temp+MOVE writes and never read remote state, so interleaving
-			 * with another device is already handled by etag conflict detection on
-			 * the next normal run. Skipping saves 4 HTTP round-trips on the
-			 * keystroke-triggered hot path — a large share of sync latency on
-			 * mobile connections. */
-			if (request.runKind !== SyncRunKind.fast) {
+			/* Take the advisory remote lock so two devices' writes don't interleave.
+			 * Skipped when nothing about this run writes to the remote:
+			 *  - Fast realtime runs push local edits via atomic temp+MOVE writes and
+			 *    never read remote state; interleaving is handled by etag conflict
+			 *    detection on the next normal run.
+			 *  - Any run whose plan has no remote-mutating task (an idle no-op sync,
+			 *    or a pull-only sync) writes nothing to lock against.
+			 * Each skip saves ~4 HTTP round-trips — the bulk of an idle sync's
+			 * wall-clock cost on a high-latency mobile connection. */
+			const needsRemoteLock =
+				request.runKind !== SyncRunKind.fast &&
+				tasks.some((task) => REMOTE_MUTATING_TASK_NAMES.has(task.name));
+			if (needsRemoteLock) {
 				// retryWebDAVCall so one flaky request (common on mobile) doesn't
 				// fail the whole run before it even starts.
 				lockAcquired = await this.retryWebDAVCall(() =>
